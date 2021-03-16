@@ -10,6 +10,7 @@ struct {
 	std::string_view ConnectToServer = "\x56\x8B\xF1\x8B\x0D\x2A\x2A\x2A\x2A\x57\x85\xC9"sv;
 	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
 	std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x78\x02\x00\x00"sv;
+	std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x1C\xD9\x05\x2A\x2A\x2A\x2A\xD8\x1D\x2A\x2A\x2A\x2A\xDF\xE0"sv;
 } sigs;
 
 typedef void(*_Con_Printf)(const char* fmt, ...);
@@ -36,10 +37,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		MH_Initialize();
 		Con_Printf = (_Con_Printf)FindSig("hw.dll", sigs.Con_Printf);
 		Con_Printf("HLFixes: Fixing gl_overbright...\n");
-		// todo: calculate this dynamically
-		// it seems like goldsrc isn't getting updates anymore so this is fine for now
-		u8* gl_texsort = (u8*)((u32)GetModuleHandle("hw.dll") + 0x1471C0);
-		*gl_texsort = 1;
+		u8** gl_texsort = (u8**)(FindSig("hw.dll", sigs.R_BuildLightMap) + 0x1A);
+		**gl_texsort = 1;
 		Con_Printf("HLFixes: Fixing music...\n");
 		MakeHook("GameUI.dll", sigs.ConnectToServer, hooked_ConnectToServer, (void**)&orig_ConnectToServer);
 		Con_Printf("HLFixes: Fixing quick save history...\n");
