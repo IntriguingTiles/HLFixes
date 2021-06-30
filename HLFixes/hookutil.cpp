@@ -53,7 +53,7 @@ void MakeHook(void* vtable, u32 index, void* func) {
 	DWORD oldProtect;
 	void** vt = *(void***)vtable;
 	VirtualProtect(&vt[index], sizeof(u32), PAGE_EXECUTE_READWRITE, &oldProtect);
-	vt[73] = func;
+	vt[index] = func;
 	VirtualProtect(&vt[index], sizeof(u32), oldProtect, &oldProtect);
 }
 
