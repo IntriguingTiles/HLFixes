@@ -50,7 +50,7 @@ HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
 	return ret;
 }
 
-extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32* b) {
+extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32 * b) {
 	auto addr = GetProcAddress(GetModuleHandle("hw.dll"), "CreateInterface");
 	return ((_CreateInterface)(addr))(name, b);
 }
@@ -60,16 +60,22 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	case DLL_PROCESS_ATTACH:
 	{
 		LoadLibrary("hw.dll");
-		MH_Initialize();
-		MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
-		MakeHook("hw.dll", sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
-		addr_R_BuildLightMap = FindSig("hw.dll", sigs.R_BuildLightMap);
-		MakeHook("hw.dll", sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+
+		if (strstr(GetCommandLine(), "--no-fixes") == 0) {
+			MH_Initialize();
+			MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
+			MakeHook("hw.dll", sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
+			addr_R_BuildLightMap = FindSig("hw.dll", sigs.R_BuildLightMap);
+			MakeHook("hw.dll", sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+		}
 		break;
 	}
 	case DLL_PROCESS_DETACH:
 		FreeLibrary(GetModuleHandle("hw.dll"));
-		MH_Uninitialize();
+
+		if (strstr(GetCommandLine(), "--no-fixes") == 0) {
+			MH_Uninitialize();
+		}
 		break;
 	}
 	return TRUE;
