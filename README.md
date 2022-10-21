@@ -4,6 +4,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 ## Bugs fixed
 - gl_overbright not functioning
 - Music stopping when a level transition occurs
+- Main menu music continuing to play while in-game
 - Quick save history not functioning
 
 ## Installing
@@ -14,8 +15,14 @@ This is a hack for GoldSrc that aims to fix some bugs.
 4. Click on `Install`
 5. If all goes well, the fixes should be applied
 
+## Launch options
+|Option|Description|
+|-|-|
+|`--no-fixes`|Causes HLFixes to not apply any fixes.|
+|`--no-version-check`|Causes HLFixes to not check the engine version.|
+
 ## How do I know if it's working?
-Make a couple quick saves and then run `load quick01` in console. It should load one of the quick saves you just made.
+Run `version` in console. If HLFixes is installed correctly, it should say `Patched with HLFixes` at the end of the output.
 
 ## How does it work?
 The installer patches the Half-Life launcher to load HLFixes instead of the engine. HLFixes then loads the engine and applies the fixes.
