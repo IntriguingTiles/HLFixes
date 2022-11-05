@@ -18,8 +18,12 @@ This is a hack for GoldSrc that aims to fix some bugs.
 ## Launch options
 |Option|Description|
 |-|-|
-|`--no-fixes`|Causes HLFixes to not apply any fixes.|
 |`--no-version-check`|Causes HLFixes to not check the engine version.|
+|`--no-fixes`|Causes HLFixes to not apply any fixes.|
+|`--no-music-fix`|Causes HLFixes to not apply music fixes.|
+|`--no-startup-music-fix`|Causes HLFixes to not apply the main menu music fix.|
+|`--no-quicksave-fix`|Causes HLFixes to not apply the quick save history fix.|
+|`--no-overbright-fix`|Causes HLFixes to not apply the overbright fix.|
 
 ## How do I know if it's working?
 Run `version` in console. If HLFixes is installed correctly, it should say `Patched with HLFixes` at the end of the output.
