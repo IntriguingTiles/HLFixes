@@ -1,9 +1,8 @@
+#include "date.h"
 #include <string_view>
 #include <Windows.h>
 #include <Shlwapi.h>
 #include <MinHook.h>
-#include <chrono>
-#include <format>
 #include "types.h"
 #include "hookutil.h"
 
@@ -16,6 +15,7 @@ struct {
 	std::string_view sub_1D08FF0 = "\xA1\x2A\x2A\x2A\x2A\x8B\x00\xC3"sv;
 	std::string_view Host_Version_f = "\x68\x2A\x2A\x2A\x2A\x68\x2A\x2A\x2A\x2A\x6A\x30\x68\x2A\x2A\x2A\x2A"sv;
 	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
+	std::string_view SetEngineDLL = "\x53\x55\x56\x57\x8B\x7C\x24\x14\xBE\x00\x11\x41\x01"sv;
 } sigs;
 
 typedef int(__fastcall* ConnectToServer)(void* _this, void* edx, const char* game, int b, int c);
@@ -25,6 +25,7 @@ typedef int(__cdecl* R_BuildLightMap)(int a1, int a2, int a3);
 typedef u32(*_GetInteralCDAudio)();
 typedef void(*Host_Version_f)();
 typedef void(*_Con_Printf)(const char* format, ...);
+typedef void(__cdecl* _SetEngineDLL)(char** dll);
 typedef HMODULE(WINAPI* _LoadLibraryA)(LPCSTR lpLibFileName);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -34,8 +35,12 @@ _LoadLibraryA orig_LoadLibraryA = nullptr;
 _GetInteralCDAudio GetInteralCDAudio = nullptr; // "Interal" is a typo on valve's part
 Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
+_SetEngineDLL SetEngineDLL = nullptr;
 
 u32 addr_R_BuildLightMap = 0;
+
+const char* engineDLL = nullptr;
+bool isHW = false;
 
 int __fastcall hooked_ConnectToServer(void* _this, void* edx, const char* game, int b, int c) {
 	u32 g_CDAudio = GetInteralCDAudio();
@@ -76,8 +81,8 @@ HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
 	return ret;
 }
 
-extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32* b) {
-	auto addr = GetProcAddress(GetModuleHandle("hw.dll"), "CreateInterface");
+extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32 * b) {
+	auto addr = GetProcAddress(GetModuleHandle(engineDLL), "CreateInterface");
 	return ((_CreateInterface)(addr))(name, b);
 }
 
@@ -89,7 +94,31 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		AllocConsole();
 		freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
 #endif
-		LoadLibrary("hw.dll");
+		char moduleName[MAX_PATH];
+		GetModuleFileNameA(hModule, moduleName, MAX_PATH);
+		// determine which engine we're using
+		SetEngineDLL = (_SetEngineDLL)FindSig("hl.exe", sigs.SetEngineDLL);
+		char* dll = nullptr;
+		SetEngineDLL(&dll);
+
+		if (StrStrIA(dll, "hl.fix")) {
+			engineDLL = "hw.dll";
+			isHW = true;
+		}
+		else {
+			// assume software engine
+			engineDLL = "sw.dll";
+			isHW = false;
+		}
+
+		LoadLibrary(engineDLL);
+
+		// fix up dll names within the engine
+		// this allows renderer switching to function properly
+		MakePatch(engineDLL, "hw.dll", "hl.fix");
+		MakePatch(engineDLL, "hw.dll", "hl.fix");
+		MakePatch(engineDLL, "sw.dll", "sw.fix");
+		MakePatch(engineDLL, "sw.dll", "sw.fix");
 
 		if (StrStrIA(GetCommandLine(), "--no-version-check") == 0) {
 			// check version of hw.dll
@@ -100,13 +129,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 			if (nt->FileHeader.TimeDateStamp != 1597869516) {
 				// doesn't match the latest steam version
+				using namespace date;
 				using namespace std::chrono;
 				std::string msg = "Your version of Half-Life ("
-					+ std::format("{:%Y-%m-%d}", sys_seconds{ (seconds)(nt->FileHeader.TimeDateStamp) })
+					+ format("%Y-%m-%d", sys_seconds{ (seconds)(nt->FileHeader.TimeDateStamp) })
 					+ ") has not been tested with HLFixes (expected version "
-					+ std::format("{:%Y-%m-%d}", sys_seconds{ 1597869516s })
+					+ format("%Y-%m-%d", sys_seconds{ 1597869516s })
 					+ "). There may be crashes or broken features.\n\n"
-					+ "If HLFixes seems to work, you can silence this warning by adding \"--no-version-check\" "
+					+ "If HLFixes works correctly, you can silence this warning by adding \"--no-version-check\" "
 					+ "to your launch options (note the two dashes at the start).";
 				MessageBox(nullptr, msg.c_str(), "HLFixes", MB_ICONWARNING | MB_OK);
 			}
@@ -115,19 +145,23 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (StrStrIA(GetCommandLine(), "--no-fixes") == 0) {
 			MH_Initialize();
 			MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
-			MakeHook("hw.dll", sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
-			addr_R_BuildLightMap = FindSig("hw.dll", sigs.R_BuildLightMap);
-			MakeHook("hw.dll", sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+			MakeHook(engineDLL, sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
+
+			if (isHW) {
+				addr_R_BuildLightMap = FindSig(engineDLL, sigs.R_BuildLightMap);
+				MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+			}
+
 			// GetInteralCDAudio is too tiny to make a unique signature for it
 			// so instead we use the signature of the function above it
-			GetInteralCDAudio = *(_GetInteralCDAudio)(FindSig("hw.dll", sigs.sub_1D08FF0) + 0x10);
-			MakeHook("hw.dll", sigs.Host_Version_f, hooked_Host_Version_f, (void**)&orig_Host_Version_f);
-			Con_Printf = (_Con_Printf)FindSig("hw.dll", sigs.Con_Printf);
+			GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) + 0x10);
+			MakeHook(engineDLL, sigs.Host_Version_f, hooked_Host_Version_f, (void**)&orig_Host_Version_f);
+			Con_Printf = (_Con_Printf)FindSig(engineDLL, sigs.Con_Printf);
 		}
 		break;
 	}
 	case DLL_PROCESS_DETACH:
-		FreeLibrary(GetModuleHandle("hw.dll"));
+		FreeLibrary(GetModuleHandle(engineDLL));
 
 		if (StrStrIA(GetCommandLine(), "--no-fixes") == 0) {
 			MH_Uninitialize();

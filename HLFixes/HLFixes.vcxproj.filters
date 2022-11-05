@@ -29,5 +29,8 @@
     <ClInclude Include="types.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="date.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

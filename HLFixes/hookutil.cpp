@@ -72,3 +72,9 @@ void MakePatch(void* addr, u8 patch[], u32 patchlen) {
 void MakePatch(void* addr, std::string_view patch) {
 	MakePatch(addr, (u8*)patch.data(), patch.length());
 }
+
+void MakePatch(const char* dll, std::string_view sig, std::string_view patch) {
+	u32 addr = FindSig(dll, sig);
+
+	if (addr != 0) MakePatch((void*)addr, (u8*)patch.data(), patch.length());
+}
