@@ -41,10 +41,11 @@ u32 addr_R_BuildLightMap = 0;
 
 const char* engineDLL = nullptr;
 bool isHW = false;
+bool fixStartupMusic = true;
 
 int __fastcall hooked_ConnectToServer(void* _this, void* edx, const char* game, int b, int c) {
 	u32 g_CDAudio = GetInteralCDAudio();
-	if (g_CDAudio) {
+	if (fixStartupMusic && g_CDAudio) {
 		char* curTrack = (char*)(g_CDAudio + 0x3D3);
 		if (StrStrIA(curTrack, "media\\gamestartup.mp3") != 0) {
 			// ConnectToServer runs "mp3 stop" if the game name isn't "valve"
@@ -144,17 +145,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 		if (StrStrIA(GetCommandLine(), "--no-fixes") == 0) {
 			MH_Initialize();
-			MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
-			MakeHook(engineDLL, sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
 
-			if (isHW) {
+			fixStartupMusic = StrStrIA(GetCommandLine(), "--no-startup-music-fix") == 0;
+
+			if (StrStrIA(GetCommandLine(), "--no-music-fix") == 0) {
+				MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
+				// GetInteralCDAudio is too tiny to make a unique signature for it
+				// so instead we use the signature of the function above it
+				GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) + 0x10);
+			}
+
+			if (StrStrIA(GetCommandLine(), "--no-quicksave-fix") == 0)
+				MakeHook(engineDLL, sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
+
+			if (isHW && StrStrIA(GetCommandLine(), "--no-overbright-fix") == 0) {
 				addr_R_BuildLightMap = FindSig(engineDLL, sigs.R_BuildLightMap);
 				MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
 			}
 
-			// GetInteralCDAudio is too tiny to make a unique signature for it
-			// so instead we use the signature of the function above it
-			GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) + 0x10);
 			MakeHook(engineDLL, sigs.Host_Version_f, hooked_Host_Version_f, (void**)&orig_Host_Version_f);
 			Con_Printf = (_Con_Printf)FindSig(engineDLL, sigs.Con_Printf);
 		}
