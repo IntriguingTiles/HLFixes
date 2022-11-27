@@ -7,13 +7,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 - Main menu music continuing to play while in-game
 - Quick save history not functioning
 
-## Installing
-0. Make sure Half-Life isn't running
-1. Download the latest release from the [releases page](https://github.com/IntriguingTiles/HLFixes/releases)
-2. Extract it somewhere
-3. Run `Installer.exe`
-4. Click on `Install`
-5. If all goes well, the fixes should be applied
+## [Installation Guide](https://hgrunt.xyz/hlfixes.html#install-guide)
 
 ## Launch options
 |Option|Description|
