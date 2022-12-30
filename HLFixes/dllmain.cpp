@@ -1,8 +1,8 @@
-#include "date.h"
 #include <string_view>
 #include <Windows.h>
 #include <Shlwapi.h>
 #include <MinHook.h>
+#include <ctime>
 #include "types.h"
 #include "hookutil.h"
 
@@ -130,12 +130,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 			if (nt->FileHeader.TimeDateStamp != 1597869516) {
 				// doesn't match the latest steam version
-				using namespace date;
-				using namespace std::chrono;
+				char expectedStr[64];
+				char actualStr[64];
+				time_t expectedTime = 1597869516;
+				tm expectedTm;
+				tm actualTm;
+				gmtime_s(&expectedTm, &expectedTime);
+				gmtime_s(&actualTm, (time_t*)&nt->FileHeader.TimeDateStamp);
+				strftime(expectedStr, 64, "%F", &expectedTm);
+				strftime(actualStr, 64, "%F", &actualTm);
 				std::string msg = "Your version of Half-Life ("
-					+ format("%Y-%m-%d", sys_seconds{ (seconds)(nt->FileHeader.TimeDateStamp) })
+					+ std::string(actualStr)
 					+ ") has not been tested with HLFixes (expected version "
-					+ format("%Y-%m-%d", sys_seconds{ 1597869516s })
+					+ std::string(expectedStr)
 					+ "). There may be crashes or broken features.\n\n"
 					+ "If HLFixes works correctly, you can silence this warning by adding \"--no-version-check\" "
 					+ "to your launch options (note the two dashes at the start).";
