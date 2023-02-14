@@ -7,7 +7,7 @@ Open `HLFixes.sln` and build it. It should build with Visual Studio 2017 and up.
 `git clone --recurse https://github.com/IntriguingTiles/HLFixes`  
 `cd Linux && mkdir build && cd build`
 
-If you're going to make a build that is intented to run on machines other than your own, you should build within the [Steam Runtime SDK](https://gitlab.steamos.cloud/steamrt/scout/sdk/-/blob/steamrt/scout/README.md).
+If you're going to make a build that is intended to run on machines other than your own, you should build within the [Steam Runtime SDK](https://gitlab.steamos.cloud/steamrt/scout/sdk/-/blob/steamrt/scout/README.md).
 
 ## With Steam Runtime (schroot)
 `schroot --chroot steamrt_scout_i386 -- cmake -DCMAKE_CXX_COMPILER=g++-9 -DCMAKE_C_COMPILER=gcc-9 ..`  
