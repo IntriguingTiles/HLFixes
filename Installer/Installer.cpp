@@ -30,61 +30,64 @@ BOOL IsWindowsVersionOrGreater(WORD wMajorVersion, WORD wMinorVersion, WORD wSer
 	return VerifyVersionInfoW(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR, dwlConditionMask) != FALSE;
 }
 
-std::wstring LocateHalfLife(HWND hWindow) {
+std::wstring OpenFolderPicker(HWND hWindow) {
+	wchar_t buffer[MAX_PATH];
+	memset(buffer, 0, sizeof(buffer));
+
+	if (SUCCEEDED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
+		if (IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_VISTA), LOBYTE(_WIN32_WINNT_VISTA), 0)) {
+			// use modern folder picker
+			IFileOpenDialog* fileDialog;
+			if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, (LPVOID*)&fileDialog))) {
+				fileDialog->SetTitle(L"Select your Half-Life folder");
+				fileDialog->SetOptions(FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FILEMUSTEXIST);
+				if (SUCCEEDED(fileDialog->Show(hWindow))) {
+					IShellItem* item;
+					if (SUCCEEDED(fileDialog->GetResult(&item))) {
+						PWSTR pszFilePath = NULL;
+						// it seems that older versions of IShellItem don't like to use already allocated buffers
+						item->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+						item->Release();
+						fileDialog->Release();
+						std::wstring ret(pszFilePath);
+						CoTaskMemFree(pszFilePath);
+						CoUninitialize();
+						return ret;
+					}
+				}
+				fileDialog->Release();
+			}
+		}
+		else {
+			// use the crusty old one
+			OleInitialize(NULL);
+			BROWSEINFO bi{};
+			bi.lpszTitle = L"Select your Half-Life folder.";
+			bi.ulFlags = BIF_USENEWUI;
+			PIDLIST_ABSOLUTE pid = SHBrowseForFolder(&bi);
+
+			if (pid) {
+				SHGetPathFromIDList(pid, buffer);
+				CoTaskMemFree(pid);
+			}
+		}
+		CoUninitialize();
+	}
+
+	return std::wstring(buffer);
+}
+
+std::wstring LocateHalfLifeFromRegistry() {
 	wchar_t buffer[MAX_PATH];
 	memset(buffer, 0, sizeof(buffer));
 	DWORD size = MAX_PATH;
 	DWORD type = 0;
 	HKEY key = NULL;
+
 	RegOpenKeyEx(HKEY_CURRENT_USER, L"SOFTWARE\\Valve\\Steam", 0, KEY_READ, &key);
-	LSTATUS status = RegQueryValueEx(key, L"ModInstallPath", NULL, &type, (LPBYTE)buffer, &size);
-
-	if (status != ERROR_SUCCESS || type != REG_SZ) {
-		// open folder picker
-
-		if (SUCCEEDED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
-			if (IsWindowsVersionOrGreater(HIBYTE(_WIN32_WINNT_VISTA), LOBYTE(_WIN32_WINNT_VISTA), 0)) {
-				// use modern folder picker
-				IFileOpenDialog* fileDialog;
-				if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, (LPVOID*)&fileDialog))) {
-					fileDialog->SetTitle(L"Select your Half-Life folder");
-					fileDialog->SetOptions(FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FILEMUSTEXIST);
-					if (SUCCEEDED(fileDialog->Show(hWindow))) {
-						IShellItem* item;
-						if (SUCCEEDED(fileDialog->GetResult(&item))) {
-							PWSTR pszFilePath = NULL;
-							// it seems that older versions of IShellItem don't like to use already allocated buffers
-							item->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
-							item->Release();
-							fileDialog->Release();
-							std::wstring ret(pszFilePath);
-							CoTaskMemFree(pszFilePath);
-							CoUninitialize();
-							RegCloseKey(key);
-							return ret;
-						}
-					}
-					fileDialog->Release();
-				}
-			}
-			else {
-				// use the crusty old one
-				OleInitialize(NULL);
-				BROWSEINFO bi{};
-				bi.lpszTitle = L"Select your Half-Life folder.";
-				bi.ulFlags = BIF_USENEWUI;
-				PIDLIST_ABSOLUTE pid = SHBrowseForFolder(&bi);
-
-				if (pid) {
-					SHGetPathFromIDList(pid, buffer);
-					CoTaskMemFree(pid);
-				}
-			}
-			CoUninitialize();
-		}
-	}
-
+	RegQueryValueEx(key, L"ModInstallPath", NULL, &type, (LPBYTE)buffer, &size);
 	RegCloseKey(key);
+
 	return std::wstring(buffer);
 }
 
@@ -124,8 +127,9 @@ BOOL IsLauncherPatched(std::wstring path) {
 		rewind(file);
 		BYTE* data = (BYTE*)malloc(size);
 		fread(data, 1, size, file);
+		fclose(file);
 
-		if (FindInArray(data, size, "hl.fix", 6) || FindInArray(data, size, "sw.fix", 6)) {
+		if (FindInArray(data, size, "hl.fix", 6) != -1 || FindInArray(data, size, "sw.fix", 6) != -1) {
 			free(data);
 			return TRUE;
 		}
@@ -138,26 +142,17 @@ BOOL IsLauncherPatched(std::wstring path) {
 	return FALSE;
 }
 
-void UpdateButtonsAndText(HWND hWindow, std::wstring path, BOOL patched, BOOL firstUpdate) {
-	EnableWindow(GetDlgItem(hWindow, IDUNINSTALL), patched);
-	SendMessage(GetDlgItem(hWindow, IDINSTALL), WM_SETTEXT, NULL, (LPARAM)(patched ? L"Reinstall" : L"Install"));
-
-	wchar_t statusStr[MAX_PATH * 2];
-	swprintf_s(statusStr, MAX_PATH * 2, L"Half-Life installation found at: %s\n\nHLFixes is currently %s.", path.c_str(), patched ? L"installed" : L"not installed");
-
+void SetPathText(HWND hWindow, std::wstring path, BOOL resize) {
 	RECT rect{ 0, 0, 0, 0 };
-	int err = 0;
-	DrawText(GetDC(hWindow), statusStr, -1, &rect, DT_CALCRECT);
-	SetWindowPos(GetDlgItem(hWindow, IDC_HLSTATUS), NULL, 0, 0, rect.right, rect.bottom, SWP_NOMOVE);
-	SetWindowText(GetDlgItem(hWindow, IDC_HLSTATUS), statusStr);
+	DrawText(GetDC(hWindow), path.c_str(), -1, &rect, DT_CALCRECT);
 
-	if (firstUpdate) {
+	if (resize) {
 		// resize window to fit the status text and center it while we're at it
 		RECT wRect{ 0, 0, 0, 0 };
 		RECT dRect{ 0, 0, 0, 0 };
 		RECT dRect2{ 0, 0, 0, 0 };
 		GetWindowRect(hWindow, &wRect);
-		SetWindowPos(hWindow, NULL, 0, 0, max(wRect.right - wRect.left, rect.right - 200), wRect.bottom, SWP_NOMOVE);
+		SetWindowPos(hWindow, NULL, 0, 0, max(wRect.right - wRect.left, rect.right + 80), wRect.bottom, SWP_NOMOVE);
 		GetWindowRect(hWindow, &wRect);
 		GetWindowRect(GetDesktopWindow(), &dRect);
 		CopyRect(&dRect2, &dRect);
@@ -166,12 +161,58 @@ void UpdateButtonsAndText(HWND hWindow, std::wstring path, BOOL patched, BOOL fi
 		OffsetRect(&dRect2, -wRect.right, -wRect.bottom);
 		SetWindowPos(hWindow, NULL, dRect.left + (dRect2.right / 2), dRect.top + (dRect2.bottom / 2), 0, 0, SWP_NOSIZE);
 	}
+
+	SetWindowText(GetDlgItem(hWindow, IDC_HLDIR), path.c_str());
+}
+
+void SetStatusText(HWND hWindow, std::wstring statusText) {
+	RECT rect{ 0, 0, 0, 0 };
+	DrawText(GetDC(hWindow), statusText.c_str(), -1, &rect, DT_CALCRECT);
+	SetWindowPos(GetDlgItem(hWindow, IDC_HLSTATUS), NULL, 0, 0, rect.right, rect.bottom, SWP_NOMOVE);
+	SetWindowText(GetDlgItem(hWindow, IDC_HLSTATUS), statusText.c_str());
+}
+
+BOOL UpdateWindowFromPath(HWND hWindow, std::wstring path, BOOL firstUpdate) {
+	SetPathText(hWindow, path, firstUpdate);
+	// reset install button text
+	SendMessage(GetDlgItem(hWindow, IDINSTALL), WM_SETTEXT, NULL, (LPARAM)L"Install");
+
+	if (!DirExists(path.c_str())) {
+		// no path, disable buttons and set status text
+		EnableWindow(GetDlgItem(hWindow, IDUNINSTALL), FALSE);
+		EnableWindow(GetDlgItem(hWindow, IDINSTALL), FALSE);
+		SetStatusText(hWindow, L"Select your Half-Life folder.");
+		return FALSE;
+	}
+
+	if (!FileExists((path + L"\\hl.exe").c_str())) {
+		// no hl.exe, disable buttons and set status text
+		EnableWindow(GetDlgItem(hWindow, IDUNINSTALL), FALSE);
+		EnableWindow(GetDlgItem(hWindow, IDINSTALL), FALSE);
+		SetStatusText(hWindow, L"The Half-Life launcher is not in the specified path.");
+		return FALSE;
+	}
+
+	if (IsLauncherPatched(path + L"\\hl.exe")) {
+		// hl.exe is present and patched
+		EnableWindow(GetDlgItem(hWindow, IDUNINSTALL), TRUE);
+		EnableWindow(GetDlgItem(hWindow, IDINSTALL), TRUE);
+		SendMessage(GetDlgItem(hWindow, IDINSTALL), WM_SETTEXT, NULL, (LPARAM)L"Reinstall");
+		SetStatusText(hWindow, L"HLFixes is currently installed.");
+		return TRUE;
+	}
+
+	// hl.exe is present and unpatched
+	EnableWindow(GetDlgItem(hWindow, IDUNINSTALL), FALSE);
+	EnableWindow(GetDlgItem(hWindow, IDINSTALL), TRUE);
+	SetStatusText(hWindow, L"HLFixes is currently not installed.");
+	return TRUE;
 }
 
 INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::wstring path;
-	static BYTE* data;
-	static long size;
+	static BYTE* data = NULL;
+	static long size = 0;
 
 	switch (uMsg) {
 	case WM_CLOSE:
@@ -185,6 +226,8 @@ INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lPara
 		GetWindowRect(hWindow, &rect);
 		SetWindowPos(GetDlgItem(hWindow, IDINSTALL), NULL, 11, rect.bottom - rect.top - 91, 0, 0, SWP_NOSIZE);
 		SetWindowPos(GetDlgItem(hWindow, IDUNINSTALL), NULL, rect.right - rect.left - 162, rect.bottom - rect.top - 91, 0, 0, SWP_NOSIZE);
+		SetWindowPos(GetDlgItem(hWindow, IDC_HLDIR), NULL, 0, 0, rect.right - rect.left - 207, 21, SWP_NOMOVE);
+		SetWindowPos(GetDlgItem(hWindow, IDC_BROWSE), NULL, rect.right - rect.left - 102, 11, 0, 0, SWP_NOSIZE);
 		return TRUE;
 	}
 	case WM_GETMINMAXINFO: {
@@ -194,6 +237,8 @@ INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lPara
 		break;
 	}
 	case WM_INITDIALOG: {
+		// i can't quite get the positioning right in the dialog editor so i'm doing this instead :sob:
+		SetWindowPos(GetDlgItem(hWindow, IDC_HLDIR), NULL, 100, 12, 0, 0, SWP_NOSIZE);
 		// check if HLFixes.dll exists
 		if (!FileExists(L"HLFixes.dll")) {
 			MessageBox(hWindow, L"The installer was unable to locate HLFixes.dll.", HLTITLE, MB_OK | MB_ICONERROR);
@@ -201,42 +246,29 @@ INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lPara
 			return FALSE;
 		}
 
-		// get HL path
-		path = LocateHalfLife(hWindow);
+		PostMessage(hWindow, WM_NEXTDLGCTL, 0, FALSE);
 
-		// check if the path actually exists
-		if (!DirExists(path.c_str())) {
-			// just exit since the user probably clicked "Cancel" in the dialog
-			_exit(-1);
-			return FALSE;
+		// get HL path from registry
+		path = LocateHalfLifeFromRegistry();
+
+		if (UpdateWindowFromPath(hWindow, path, TRUE)) {
+			// load hl.exe into memory
+			FILE* file;
+			_wfopen_s(&file, (path + L"\\hl.exe").c_str(), L"rb");
+
+			if (!file) {
+				MessageBox(hWindow, L"The installer was unable to read the Half-Life launcher.\nTry restarting the installer as an Administrator.", HLTITLE, MB_OK | MB_ICONERROR);
+				return TRUE;
+			}
+
+			fseek(file, 0, SEEK_END);
+			size = ftell(file);
+			rewind(file);
+			data = (BYTE*)malloc(size);
+			fread(data, 1, size, file);
+			fclose(file);
 		}
 
-		// check if hl.exe exists
-		if (!FileExists((path + L"\\hl.exe").c_str())) {
-			MessageBox(hWindow, L"The installer was unable to locate the Half-Life launcher.", HLTITLE, MB_OK | MB_ICONERROR);
-			_exit(-1);
-			return FALSE;
-		}
-
-		// load hl.exe into memory
-		FILE* file;
-		_wfopen_s(&file, (path + L"\\hl.exe").c_str(), L"rb");
-
-		if (!file) {
-			MessageBox(hWindow, L"The installer was unable to read the Half-Life launcher.\nTry restarting the installer as an Administrator.", HLTITLE, MB_OK | MB_ICONERROR);
-			_exit(-1);
-			return FALSE;
-		}
-
-		fseek(file, 0, SEEK_END);
-		size = ftell(file);
-		rewind(file);
-		data = (BYTE*)malloc(size);
-		fread(data, 1, size, file);
-		fclose(file);
-
-		// update buttons
-		UpdateButtonsAndText(hWindow, path, FindInArray(data, size, "hl.fix", 6) != -1 || FindInArray(data, size, "sw.fix", 6) != -1, TRUE);
 		return TRUE;
 	}
 	case WM_COMMAND:
@@ -292,7 +324,7 @@ INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lPara
 				fclose(file);
 
 				// update buttons
-				UpdateButtonsAndText(hWindow, path, TRUE, FALSE);
+				UpdateWindowFromPath(hWindow, path, FALSE);
 
 				MessageBox(hWindow, L"Successfully installed.", HLTITLE, MB_OK | MB_ICONINFORMATION);
 				return TRUE;
@@ -317,9 +349,41 @@ INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lPara
 				DeleteFile((path + L"\\sw.fix").c_str());
 
 				// update buttons
-				UpdateButtonsAndText(hWindow, path, FALSE, FALSE);
+				UpdateWindowFromPath(hWindow, path, FALSE);
 
 				MessageBox(hWindow, L"Successfully uninstalled.", HLTITLE, MB_OK | MB_ICONINFORMATION);
+				return TRUE;
+			}
+			case IDC_BROWSE: {
+				std::wstring newPath = OpenFolderPicker(hWindow);
+
+				if (newPath.empty()) return TRUE;
+				else path = newPath;
+
+				if (UpdateWindowFromPath(hWindow, path, FALSE)) {
+					// load hl.exe into memory
+					FILE* file;
+					_wfopen_s(&file, (path + L"\\hl.exe").c_str(), L"rb");
+
+					if (!file) {
+						MessageBox(hWindow, L"The installer was unable to read the Half-Life launcher.\nTry restarting the installer as an Administrator.", HLTITLE, MB_OK | MB_ICONERROR);
+						return TRUE;
+					}
+
+					fseek(file, 0, SEEK_END);
+					long newSize = ftell(file);
+					rewind(file);
+					if (size == 0) {
+						data = (BYTE*)malloc(newSize);
+					}
+					else {
+						data = (BYTE*)realloc(data, newSize);
+					}
+					size = newSize;
+					fread(data, 1, size, file);
+					fclose(file);
+				}
+
 				return TRUE;
 			}
 			}
