@@ -123,16 +123,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 		if (StrStrIA(GetCommandLine(), "--no-version-check") == 0) {
 			// check version of hw.dll
-			u32 base = (u32)GetModuleHandle("hw.dll");
+			u32 base = (u32)GetModuleHandle(engineDLL);
 
 			auto dos = (IMAGE_DOS_HEADER*)base;
 			auto nt = (IMAGE_NT_HEADERS*)((u8*)dos + dos->e_lfanew);
 
-			if (nt->FileHeader.TimeDateStamp != 1597869516) {
+			if (nt->FileHeader.TimeDateStamp != (isHW ? 1597869516 : 1597869510)) {
 				// doesn't match the latest steam version
 				char expectedStr[64];
 				char actualStr[64];
-				time_t expectedTime = 1597869516;
+				time_t expectedTime = (isHW ? 1597869516 : 1597869510);
 				tm expectedTm;
 				tm actualTm;
 				gmtime_s(&expectedTm, &expectedTime);
