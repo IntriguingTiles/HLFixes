@@ -93,12 +93,12 @@ std::wstring LocateHalfLifeFromRegistry() {
 
 BOOL FileExists(const wchar_t* path) {
 	DWORD attribs = GetFileAttributes(path);
-	return attribs != INVALID_FILE_ATTRIBUTES && attribs != FILE_ATTRIBUTE_DIRECTORY;
+	return attribs != INVALID_FILE_ATTRIBUTES && ((attribs & FILE_ATTRIBUTE_DIRECTORY) == 0);
 }
 
 BOOL DirExists(const wchar_t* path) {
 	DWORD attribs = GetFileAttributes(path);
-	return attribs != INVALID_FILE_ATTRIBUTES && attribs == FILE_ATTRIBUTE_DIRECTORY;
+	return attribs != INVALID_FILE_ATTRIBUTES && attribs & FILE_ATTRIBUTE_DIRECTORY;
 }
 
 int FindInArray(BYTE* arr, int length, const char* sig, int siglen) {
