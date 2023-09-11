@@ -16,6 +16,8 @@ struct {
 	std::string_view Host_Version_f = "\x68\x2A\x2A\x2A\x2A\x68\x2A\x2A\x2A\x2A\x6A\x30\x68\x2A\x2A\x2A\x2A"sv;
 	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
 	std::string_view SetEngineDLL = "\x53\x55\x56\x57\x8B\x7C\x24\x14\xBE\x00\x11\x41\x01"sv;
+	std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
+	std::string_view R_NewMap = "\x55\x8B\xEC\x83\xEC\x08\xC7\x45\xFC\x00\x00\x00\x00"sv;
 } sigs;
 
 typedef int(__fastcall* ConnectToServer)(void* _this, void* edx, const char* game, int b, int c);
@@ -26,6 +28,7 @@ typedef u32(*_GetInteralCDAudio)();
 typedef void(*Host_Version_f)();
 typedef void(*_Con_Printf)(const char* format, ...);
 typedef void(__cdecl* _SetEngineDLL)(char** dll);
+typedef int(__cdecl* Q_strncmp)(const char* s1, const char* s2, int count);
 typedef HMODULE(WINAPI* _LoadLibraryA)(LPCSTR lpLibFileName);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -36,6 +39,7 @@ _GetInteralCDAudio GetInteralCDAudio = nullptr; // "Interal" is a typo on valve'
 Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
 _SetEngineDLL SetEngineDLL = nullptr;
+Q_strncmp orig_Q_strncmp = nullptr;
 
 u32 addr_R_BuildLightMap = 0;
 
@@ -65,6 +69,13 @@ int __cdecl hooked_R_BuildLightMap(int a1, int a2, int a3) {
 	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x1A);
 	**gl_texsort = 1;
 	return orig_R_BuildLightMap(a1, a2, a3);
+}
+
+int __cdecl hooked_Q_strncmp(const char* s1, const char* s2, int count) {
+	// czero adds a texture called skycull which can break the check in R_NewMap
+	// it should never be used as the actual skybox texture so let's pretend it didn't match
+	if (!strncmp(s1, "skycull", 7) && !strncmp(s2, "sky", 3)) return 1;
+	else return orig_Q_strncmp(s1, s2, count);
 }
 
 void hooked_Host_Version_f() {
@@ -168,6 +179,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			if (isHW && StrStrIA(GetCommandLine(), "--no-overbright-fix") == 0) {
 				addr_R_BuildLightMap = FindSig(engineDLL, sigs.R_BuildLightMap);
 				MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+			}
+
+			if (isHW && StrStrIA(GetCommandLine(), "--no-sky-fix") == 0) {
+				orig_Q_strncmp = (Q_strncmp)FindSig(engineDLL, sigs.Q_strncmp);
+
+				// in order to avoid potential side effects of hooking Q_strncmp
+				// we will instead patch the function call so that it calls us instead
+				// this is super brittle so make super sure that this is the right place to patch
+				u32 addr_R_NewMap = FindSig(engineDLL, sigs.R_NewMap);
+				if (addr_R_NewMap && *(u8*)(addr_R_NewMap + 0x11F) == 0xE8) {
+					// found the start of a call, so far so good
+					if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + 0x120), addr_R_NewMap + 0x11F + 5) == (u32)orig_Q_strncmp) {
+						// and the call goes to Q_strncmp, probably safe to patch now
+						// patches are done byte-by-byte so the address needs to be in little endian
+						u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x11F + 5);
+						MakePatch((void*)(addr_R_NewMap + 0x120), (u8*)&addr, 4);
+					}
+				}
 			}
 
 			MakeHook(engineDLL, sigs.Host_Version_f, hooked_Host_Version_f, (void**)&orig_Host_Version_f);

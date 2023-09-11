@@ -32,8 +32,7 @@ void MakeHook(void* addr, void* func) {
 }
 
 void MakeHook(void* addr, void* func, void** origFunc) {
-	auto status = MH_CreateHook(addr, func, origFunc);
-	if (status != MH_OK) printf("error: %d\n", status);
+	MH_CreateHook(addr, func, origFunc);
 	MH_EnableHook(addr);
 }
 
@@ -77,4 +76,12 @@ void MakePatch(const char* dll, std::string_view sig, std::string_view patch) {
 	u32 addr = FindSig(dll, sig);
 
 	if (addr != 0) MakePatch((void*)addr, (u8*)patch.data(), patch.length());
+}
+
+u32 RelativeToAbsolute(u32 relAddr, u32 nextInstructionAddr) {
+	return relAddr + nextInstructionAddr;
+}
+
+u32 AbsoluteToRelative(u32 absAddr, u32 nextInstructionAddr) {
+	return absAddr - nextInstructionAddr;
 }
