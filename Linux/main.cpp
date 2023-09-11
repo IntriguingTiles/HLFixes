@@ -2,6 +2,9 @@
 #include <dlfcn.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/mman.h>
+#include <errno.h>
+#include <unistd.h>
 #include "types.h"
 #include "funchook.h"
 
@@ -14,6 +17,7 @@ typedef int(CDECL *R_BuildLightMap)(int a1, int a2, int a3);
 typedef u32 (*_GetInteralCDAudio)();
 typedef void(CDECL *Host_Version_f)();
 typedef void (*_Con_Printf)(const char *format, ...);
+typedef int(CDECL *Q_strncmp)(const char *s1, const char *s2, int count);
 typedef void *(*_dlopen)(const char *__file, int __mode);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -23,6 +27,7 @@ _dlopen orig_dlopen = nullptr;
 _GetInteralCDAudio GetInteralCDAudio = nullptr; // "Interal" is a typo on valve's part
 Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
+Q_strncmp orig_Q_strncmp = nullptr;
 
 bool *gl_texsort = nullptr;
 void *hw = nullptr;
@@ -31,6 +36,7 @@ bool fixSaves = true;
 bool fixOverbright = true;
 bool fixMusic = true;
 bool fixStartupMusic = true;
+bool fixSky = true;
 
 int CDECL hooked_ConnectToServer(void *_this, const char *game, int b, int c)
 {
@@ -61,6 +67,14 @@ int CDECL hooked_R_BuildLightMap(int a1, int a2, int a3)
 {
     *gl_texsort = true;
     return orig_R_BuildLightMap(a1, a2, a3);
+}
+
+int CDECL hooked_Q_strncmp(const char *s1, const char *s2, int count)
+{
+    if (!strncmp(s1, "skycull", 7) && !strncmp(s2, "sky", 3))
+        return 1;
+    else
+        return orig_Q_strncmp(s1, s2, count);
 }
 
 void CDECL hooked_Host_Version_f()
@@ -105,12 +119,38 @@ bool checkArg(const char *arg, int argc, char **argv)
     return false;
 }
 
+u32 RelativeToAbsolute(u32 relAddr, u32 nextInstructionAddr)
+{
+    return relAddr + nextInstructionAddr;
+}
+
+u32 AbsoluteToRelative(u32 absAddr, u32 nextInstructionAddr)
+{
+    return absAddr - nextInstructionAddr;
+}
+
+void MakePatch(u32 addr, u8 patch[], u32 patchlen)
+{
+    int pageSize = sysconf(_SC_PAGESIZE);
+    int pageDiff = addr % pageSize;
+    mprotect((void *)(addr - pageDiff), patchlen + pageDiff, PROT_READ | PROT_WRITE);
+
+    for (u32 i = 0; i < patchlen; i++)
+    {
+        u8 *byte = (u8 *)((u32)addr + i);
+        *byte = patch[i];
+    }
+
+    mprotect((void *)(addr - pageDiff), patchlen + pageDiff, PROT_READ | PROT_EXEC);
+}
+
 static int init(int argc, char **argv, char **env)
 {
     fixMusic = !checkArg("--no-music-fix", argc, argv);
     fixStartupMusic = !checkArg("--no-startup-music-fix", argc, argv);
     fixSaves = !checkArg("--no-quicksave-fix", argc, argv);
     fixOverbright = !checkArg("--no-overbright-fix", argc, argv);
+    fixSky = !checkArg("--no-sky-fix", argc, argv);
 
     hw = dlopen("hw.so", RTLD_NOW);
 
@@ -124,6 +164,7 @@ static int init(int argc, char **argv, char **env)
         GetInteralCDAudio = (_GetInteralCDAudio)dlsym(hw, "_Z17GetInteralCDAudiov");
         orig_Host_Version_f = (Host_Version_f)dlsym(hw, "Host_Version_f");
         Con_Printf = (_Con_Printf)dlsym(hw, "Con_Printf");
+        orig_Q_strncmp = (Q_strncmp)dlsym(hw, "Q_strncmp");
         orig_dlopen = dlopen;
 
         if (fixMusic)
@@ -132,6 +173,19 @@ static int init(int argc, char **argv, char **env)
             funchook_prepare(funchook, (void **)&orig_SaveGameSlot, (void *)hooked_SaveGameSlot);
         if (fixOverbright)
             funchook_prepare(funchook, (void **)&orig_R_BuildLightMap, (void *)hooked_R_BuildLightMap);
+
+        if (fixSky)
+        {
+            u32 addr_R_NewMap = (u32)dlsym(hw, "R_NewMap");
+            if (orig_Q_strncmp && *(u8 *)(addr_R_NewMap + 0x17B) == 0xE8)
+            {
+                if (RelativeToAbsolute(*(u32 *)(addr_R_NewMap + 0x17C), addr_R_NewMap + 0x17B + 5) == (u32)orig_Q_strncmp)
+                {
+                    u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x17B + 5);
+                    MakePatch(addr_R_NewMap + 0x17C, (u8 *)&addr, 4);
+                }
+            }
+        }
 
         funchook_prepare(funchook, (void **)&orig_Host_Version_f, (void *)hooked_Host_Version_f);
         funchook_install(funchook, 0);
