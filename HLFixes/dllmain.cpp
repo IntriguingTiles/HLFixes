@@ -9,12 +9,17 @@
 using namespace std::literals::string_view_literals;
 
 struct {
-	std::string_view ConnectToServer = "\x56\x8B\xF1\x8B\x0D\x2A\x2A\x2A\x2A\x57\x85\xC9"sv;
-	std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x78\x02\x00\x00"sv;
-	std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x1C\xD9\x05\x2A\x2A\x2A\x2A\xD8\x1D\x2A\x2A\x2A\x2A\xDF\xE0"sv;
-	std::string_view sub_1D08FF0 = "\xA1\x2A\x2A\x2A\x2A\x8B\x00\xC3"sv;
+	//std::string_view ConnectToServer = "\x56\x8B\xF1\x8B\x0D\x2A\x2A\x2A\x2A\x57\x85\xC9"sv;
+	std::string_view ConnectToServer = "\x55\x8B\xEC\x6A\xFF\x68\x2A\x2A\x2A\x2A\x64\xA1\x00\x00\x00\x00\x50\x81\xEC\x88\x00\x00\x00"sv;
+	//std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x78\x02\x00\x00"sv;
+	std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x90\x04\x00\x00"sv;
+	//std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x1C\xD9\x05\x2A\x2A\x2A\x2A\xD8\x1D\x2A\x2A\x2A\x2A\xDF\xE0"sv;
+	std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x18\x0F\x57\xC9"sv;
+	//std::string_view sub_1D08FF0 = "\xA1\x2A\x2A\x2A\x2A\x8B\x00\xC3"sv;
+	std::string_view sub_1D08FF0 = "\x56\x8B\xF1\x68\xAC\x02\x00\x00"sv;
 	std::string_view Host_Version_f = "\x68\x2A\x2A\x2A\x2A\x68\x2A\x2A\x2A\x2A\x6A\x30\x68\x2A\x2A\x2A\x2A"sv;
-	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
+	//std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
+	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x04\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x8D\x45\x0C"sv;
 	std::string_view SetEngineDLL = "\x53\x55\x56\x57\x8B\x7C\x24\x14\xBE\x00\x11\x41\x01"sv;
 	std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
 	std::string_view R_NewMap = "\x55\x8B\xEC\x83\xEC\x08\xC7\x45\xFC\x00\x00\x00\x00"sv;
@@ -66,7 +71,7 @@ bool __cdecl hooked_SaveGameSlot(char* save, char* comment) {
 }
 
 int __cdecl hooked_R_BuildLightMap(int a1, int a2, int a3) {
-	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x1A);
+	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x36);
 	**gl_texsort = 1;
 	return orig_R_BuildLightMap(a1, a2, a3);
 }
@@ -106,12 +111,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		AllocConsole();
 		freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
 #endif
+		// determine which engine we're using
 		char moduleName[MAX_PATH];
 		GetModuleFileNameA(hModule, moduleName, MAX_PATH);
-		// determine which engine we're using
-		SetEngineDLL = (_SetEngineDLL)FindSig("hl.exe", sigs.SetEngineDLL);
 		char* dll = nullptr;
-		SetEngineDLL(&dll);
+		int indexOfLastSlash = 0;
+		for (int i = 0; i < strlen(moduleName); i++) {
+			if (moduleName[i] == '\\') indexOfLastSlash = i;
+		}
+		dll = (moduleName + indexOfLastSlash + 1);
 
 		if (StrStrIA(dll, "hl.fix")) {
 			engineDLL = "hw.dll";
@@ -139,11 +147,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			auto dos = (IMAGE_DOS_HEADER*)base;
 			auto nt = (IMAGE_NT_HEADERS*)((u8*)dos + dos->e_lfanew);
 
-			if (nt->FileHeader.TimeDateStamp != (isHW ? 1597869516 : 1597869510)) {
+			if (nt->FileHeader.TimeDateStamp != (isHW ? 1700205173 : 1700205127)) {
 				// doesn't match the latest steam version
 				char expectedStr[64];
 				char actualStr[64];
-				time_t expectedTime = (isHW ? 1597869516 : 1597869510);
+				time_t expectedTime = (isHW ? 1700205173 : 1700205127);
 				tm expectedTm;
 				tm actualTm;
 				gmtime_s(&expectedTm, &expectedTime);
@@ -170,7 +178,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
 				// GetInteralCDAudio is too tiny to make a unique signature for it
 				// so instead we use the signature of the function above it
-				GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) + 0x10);
+				GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) - 0x10);
 			}
 
 			if (StrStrIA(GetCommandLine(), "--no-quicksave-fix") == 0)

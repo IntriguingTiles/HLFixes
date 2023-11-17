@@ -104,7 +104,8 @@
       <IgnoreSpecificDefaultLibraries>LIBCMT</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>copy /y $(TargetPath) "D:\SteamLibrary\steamapps\common\Half-Life\hl.fix"</Command>
+      <Command>copy /y $(TargetPath) "D:\SteamLibrary\steamapps\common\Half-Life\hl.fix"
+copy /y $(TargetPath) "D:\SteamLibrary\steamapps\common\Half-Life\sw.fix"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -134,7 +135,8 @@
       <IgnoreSpecificDefaultLibraries>LIBCMT</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>copy /y $(TargetPath) "D:\SteamLibrary\steamapps\common\Half-Life\hl.fix"</Command>
+      <Command>copy /y $(TargetPath) "D:\SteamLibrary\steamapps\common\Half-Life\hl.fix"
+copy /y $(TargetPath) "D:\SteamLibrary\steamapps\common\Half-Life\sw.fix"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
