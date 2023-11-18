@@ -11,6 +11,9 @@ set(CMAKE_CXX_FLAGS "-m32")
 include_directories(HLFixes funchook/include)
 add_subdirectory(funchook)
 
-add_library(HLFixes SHARED main.cpp)
-target_link_libraries(HLFixes funchook-static)
+find_package(PkgConfig REQUIRED)
+pkg_search_module(LIBELF REQUIRED libelf)
+
+add_library(HLFixes SHARED main.cpp utils.cpp)
+target_link_libraries(HLFixes funchook-static ${LIBELF_LIBRARIES})
 set_target_properties(HLFixes PROPERTIES PREFIX "")
