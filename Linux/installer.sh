@@ -13,6 +13,7 @@ install() {
 
     echo Copying HLFixes...
     cp HLFixes.so "$1/hl.fx"
+    cp HLFixes.so "$1/sw.fx"
 
     # only make a backup if the current launcher is seemingly okay
     if ! [[ -f "$1/hl_linux.bak" ]] && grep -Fxq 'hw.so' "$path/hl_linux"; then
@@ -22,6 +23,7 @@ install() {
 
     echo Patching the launcher...
     sed -i 's/hw.so/hl.fx/g' "$1/hl_linux"
+    sed -i 's/sw.so/sw.fx/g' "$1/hl_linux"
 
     echo Done.
 }

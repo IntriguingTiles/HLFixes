@@ -42,7 +42,7 @@ void readSymbols(const char *lib, std::unordered_map<std::string_view, u32> &sym
 }
 
 // this sucks but it works for now
-u32 getModuleAddress(const char *lib)
+bool getModuleAddress(const char *lib, u32* startOfModule, u32* endOfModule)
 {
     FILE *maps = fopen("/proc/self/maps", "r");
     char line[PATH_MAX];
@@ -64,13 +64,15 @@ u32 getModuleAddress(const char *lib)
             if (permissions[2] = 'x')
             {
                 fclose(maps);
-                return start;
+                if (startOfModule) *startOfModule = start;
+                if (endOfModule) *endOfModule = end;
+                return true;
             }
         }
     }
 
     fclose(maps);
-    return 0;
+    return false;
 }
 
 bool checkArg(const char *arg, int argc, char **argv)
@@ -94,6 +96,26 @@ u32 AbsoluteToRelative(u32 absAddr, u32 nextInstructionAddr)
     return absAddr - nextInstructionAddr;
 }
 
+u32 FindSig(u32 start, u32 end, u8 sig[], u32 siglen) {
+	for (u32 cur = start; cur < end; cur++) {
+		for (u32 i = 0; i < siglen; i++) {
+			u8* b = (u8*)(cur + i);
+			if (*b != sig[i] && sig[i] != '*') break;
+			if (i == siglen - 1) return cur;
+		}
+	}
+
+	return 0;
+}
+
+u32 FindSig(const char* dll, std::string_view sig) {
+    u32 start;
+    u32 end;
+	getModuleAddress(dll, &start, &end);
+
+	return FindSig(start, end, (u8*)sig.data(), sig.length());
+}
+
 void MakePatch(u32 addr, u8 patch[], u32 patchlen)
 {
     int pageSize = sysconf(_SC_PAGESIZE);
@@ -107,4 +129,10 @@ void MakePatch(u32 addr, u8 patch[], u32 patchlen)
     }
 
     mprotect((void *)(addr - pageDiff), patchlen + pageDiff, PROT_READ | PROT_EXEC);
+}
+
+void MakePatch(const char* dll, std::string_view sig, std::string_view patch) {
+	u32 addr = FindSig(dll, sig);
+
+	if (addr != 0) MakePatch(addr, (u8*)patch.data(), patch.length());
 }
