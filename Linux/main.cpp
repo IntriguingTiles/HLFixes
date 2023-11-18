@@ -163,14 +163,6 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
                 }
             }
 
-            printf("orig_SaveGameSlot: 0x%X\n", orig_SaveGameSlot);
-            printf("orig_R_BuildLightMap: 0x%X\n", orig_R_BuildLightMap);
-            printf("gl_texsort: 0x%X\n", gl_texsort);
-            printf("GetInteralCDAudio: 0x%X\n", GetInteralCDAudio);
-            printf("orig_Host_Version_f: 0x%X\n", orig_Host_Version_f);
-            printf("Con_Printf: 0x%X\n", Con_Printf);
-            printf("orig_Q_strncmp: 0x%X\n", orig_Q_strncmp);
-            printf("orig_dlopen: 0x%X\n", orig_dlopen);
             funchook_prepare(funchook, (void **)&orig_Host_Version_f, (void *)hooked_Host_Version_f);
             funchook_install(funchook, 0);
         }
