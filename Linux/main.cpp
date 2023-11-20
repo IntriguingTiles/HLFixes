@@ -10,26 +10,48 @@
 #include "funchook.h"
 #include "utils.h"
 
+typedef struct
+{
+    char *name;
+    char *string;
+    int flags;
+    float value;
+    void *next;
+} cvar_t;
+
+static_assert(sizeof(cvar_t) == 0x14, "wrong size for cvar_t");
+
+typedef struct
+{
+    void *hook;
+    cvar_t *cvar;
+    void *next;
+} cvarhook_t;
+
+static_assert(sizeof(cvarhook_t) == 0xC, "wrong size for cvarhook_t");
+
 typedef int (*ConnectToServer)(void *_this, const char *game, int b, int c);
 typedef bool (*SaveGameSlot)(char *save, char *comment);
 typedef void *(*_CreateInterface)(const char *name, u32 *b);
-typedef int (*R_BuildLightMap)(int a1, int a2, int a3);
 typedef u32 (*_GetInteralCDAudio)();
 typedef void (*Host_Version_f)();
 typedef void (*_Con_Printf)(const char *format, ...);
 typedef int (*Q_strncmp)(const char *s1, const char *s2, int count);
 typedef void *(*_dlopen)(const char *__file, int __mode);
 typedef void (*_SetEngineDLL)(const char **ppEngineDLL);
+typedef bool (*_Cvar_HookVariable)(char *var_name, cvarhook_t *pHook);
+typedef void (*R_Init)();
 
 ConnectToServer orig_ConnectToServer = nullptr;
 SaveGameSlot orig_SaveGameSlot = nullptr;
-R_BuildLightMap orig_R_BuildLightMap = nullptr;
 _dlopen orig_dlopen = nullptr;
 _GetInteralCDAudio GetInteralCDAudio = nullptr; // "Interal" is a typo on valve's part
 Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
 Q_strncmp orig_Q_strncmp = nullptr;
 _SetEngineDLL SetEngineDLL = nullptr;
+_Cvar_HookVariable Cvar_HookVariable = nullptr;
+R_Init orig_R_Init = nullptr;
 
 bool *gl_texsort = nullptr;
 void *engine = nullptr;
@@ -91,12 +113,6 @@ bool hooked_SaveGameSlot(char *save, char *comment)
         return orig_SaveGameSlot(save, comment);
 }
 
-int hooked_R_BuildLightMap(int a1, int a2, int a3)
-{
-    *gl_texsort = true;
-    return orig_R_BuildLightMap(a1, a2, a3);
-}
-
 int hooked_Q_strncmp(const char *s1, const char *s2, int count)
 {
     if (!strncmp(s1, "skycull", 7) && !strncmp(s2, "sky", 3))
@@ -109,6 +125,25 @@ void hooked_Host_Version_f()
 {
     orig_Host_Version_f();
     Con_Printf("Patched with HLFixes (built " __TIME__ " " __DATE__ ")\n");
+}
+
+void gl_use_shaders_callback(cvar_t *cvar)
+{
+    if (cvar->value >= 0.99f)
+        *gl_texsort = false;
+    else
+        *gl_texsort = true;
+}
+
+cvarhook_t gl_use_shaders_hook = {
+    (void*)gl_use_shaders_callback,
+    nullptr,
+    nullptr
+};
+
+void hooked_R_Init() {
+    orig_R_Init();
+    Cvar_HookVariable("gl_use_shaders", &gl_use_shaders_hook);
 }
 
 extern "C" void *hooked_dlopen(const char *__file, int __mode)
@@ -138,7 +173,8 @@ extern "C" void *hooked_dlopen(const char *__file, int __mode)
 
 extern "C" void *CreateInterface(const char *name, u32 *b)
 {
-    if (engine) {
+    if (engine)
+    {
         // unload the engine
         dlclose(engine);
         engine = nullptr;
@@ -165,7 +201,8 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
         }
 
         // unload engine if already loaded (which should never happen here)
-        if (void* handle = dlopen(engineDLL, RTLD_NOW | RTLD_NOLOAD)) {
+        if (void *handle = dlopen(engineDLL, RTLD_NOW | RTLD_NOLOAD))
+        {
             dlclose(handle);
         }
 
@@ -182,15 +219,17 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
 
             orig_SaveGameSlot = (SaveGameSlot)getEngineSymbol("SaveGameSlot");
             if (isHW)
-                orig_R_BuildLightMap = (R_BuildLightMap)getEngineSymbol("R_BuildLightMap");
+                orig_R_Init = (R_Init)getEngineSymbol("R_Init");
             gl_texsort = (bool *)getEngineSymbol("gl_texsort");
             GetInteralCDAudio = (_GetInteralCDAudio)getEngineSymbol("_Z17GetInteralCDAudiov");
             orig_Host_Version_f = (Host_Version_f)getEngineSymbol("Host_Version_f");
             Con_Printf = (_Con_Printf)getEngineSymbol("Con_Printf");
             orig_Q_strncmp = (Q_strncmp)getEngineSymbol("Q_strncmp");
             orig_dlopen = dlopen;
+            Cvar_HookVariable = (_Cvar_HookVariable)getEngineSymbol("Cvar_HookVariable");
 
-            if (fixMusic) {
+            if (fixMusic)
+            {
                 dlopenFunchook = funchook_create();
                 funchook_prepare(dlopenFunchook, (void **)&orig_dlopen, (void *)hooked_dlopen);
                 funchook_install(dlopenFunchook, 0);
@@ -198,17 +237,17 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
             if (fixSaves)
                 funchook_prepare(engineFunchook, (void **)&orig_SaveGameSlot, (void *)hooked_SaveGameSlot);
             if (isHW && fixOverbright)
-                funchook_prepare(engineFunchook, (void **)&orig_R_BuildLightMap, (void *)hooked_R_BuildLightMap);
+                funchook_prepare(engineFunchook, (void **)&orig_R_Init, (void *)hooked_R_Init);
 
             if (isHW && fixSky)
             {
                 u32 addr_R_NewMap = getEngineSymbol("R_NewMap");
-                if (orig_Q_strncmp && *(u8 *)(addr_R_NewMap + 0x17B) == 0xE8)
+                if (orig_Q_strncmp && *(u8 *)(addr_R_NewMap + 0x199) == 0xE8)
                 {
-                    if (RelativeToAbsolute(*(u32 *)(addr_R_NewMap + 0x17C), addr_R_NewMap + 0x17B + 5) == (u32)orig_Q_strncmp)
+                    if (RelativeToAbsolute(*(u32 *)(addr_R_NewMap + 0x19A), addr_R_NewMap + 0x199 + 5) == (u32)orig_Q_strncmp)
                     {
-                        u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x17B + 5);
-                        MakePatch(addr_R_NewMap + 0x17C, (u8 *)&addr, 4);
+                        u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x199 + 5);
+                        MakePatch(addr_R_NewMap + 0x19A, (u8 *)&addr, 4);
                     }
                 }
             }
