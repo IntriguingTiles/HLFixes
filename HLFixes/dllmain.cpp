@@ -21,9 +21,30 @@ struct {
 	//std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
 	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x04\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x8D\x45\x0C"sv;
 	std::string_view SetEngineDLL = "\x53\x55\x56\x57\x8B\x7C\x24\x14\xBE\x00\x11\x41\x01"sv;
-	std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
+	//std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
+	std::string_view Q_strncmp = "\x55\x8B\xEC\x56\x8B\x75\x08\x85\xF6\x74\x2A\x8B\x45\x0C\x85\xC0\x74\x2A"sv;
 	std::string_view R_NewMap = "\x55\x8B\xEC\x83\xEC\x08\xC7\x45\xFC\x00\x00\x00\x00"sv;
+	std::string_view Cvar_HookVariable = "\x55\x8B\xEC\x56\x8B\x75\x0C\x85\xF6\x74\x2A\x83\x3E\x00"sv;
+	std::string_view R_Init = "\x55\x8B\xEC\x81\xEC\x10\x03\x00\x00\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x6A\x10"sv;
 } sigs;
+
+typedef struct {
+	char* name;
+	char* string;
+	int flags;
+	float value;
+	void* next;
+} cvar_t;
+
+static_assert(sizeof(cvar_t) == 0x14, "wrong size for cvar_t");
+
+typedef struct {
+	void* hook;
+	cvar_t* cvar;
+	void* next;
+} cvarhook_t;
+
+static_assert(sizeof(cvarhook_t) == 0xC, "wrong size for cvarhook_t");
 
 typedef int(__fastcall* ConnectToServer)(void* _this, void* edx, const char* game, int b, int c);
 typedef bool(__cdecl* SaveGameSlot)(char* save, char* comment);
@@ -34,6 +55,8 @@ typedef void(*Host_Version_f)();
 typedef void(*_Con_Printf)(const char* format, ...);
 typedef void(__cdecl* _SetEngineDLL)(char** dll);
 typedef int(__cdecl* Q_strncmp)(const char* s1, const char* s2, int count);
+typedef bool(__cdecl* _Cvar_HookVariable)(char* var_name, cvarhook_t* pHook); \
+typedef void(*R_Init)();
 typedef HMODULE(WINAPI* _LoadLibraryA)(LPCSTR lpLibFileName);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -45,6 +68,8 @@ Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
 _SetEngineDLL SetEngineDLL = nullptr;
 Q_strncmp orig_Q_strncmp = nullptr;
+_Cvar_HookVariable Cvar_HookVariable = nullptr;
+R_Init orig_R_Init = nullptr;
 
 u32 addr_R_BuildLightMap = 0;
 
@@ -70,12 +95,6 @@ bool __cdecl hooked_SaveGameSlot(char* save, char* comment) {
 	else return orig_SaveGameSlot(save, comment);
 }
 
-int __cdecl hooked_R_BuildLightMap(int a1, int a2, int a3) {
-	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x36);
-	**gl_texsort = 1;
-	return orig_R_BuildLightMap(a1, a2, a3);
-}
-
 int __cdecl hooked_Q_strncmp(const char* s1, const char* s2, int count) {
 	// czero adds a texture called skycull which can break the check in R_NewMap
 	// it should never be used as the actual skybox texture so let's pretend it didn't match
@@ -86,6 +105,29 @@ int __cdecl hooked_Q_strncmp(const char* s1, const char* s2, int count) {
 void hooked_Host_Version_f() {
 	orig_Host_Version_f();
 	Con_Printf("Patched with HLFixes (built " __TIME__ " " __DATE__ ")\n");
+}
+
+void gl_use_shaders_callback(cvar_t* cvar) {
+	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x36);
+
+	if (cvar->value >= 0.99f) {
+		// turn off texsort since gl_use_shaders does its own overbright
+		**gl_texsort = 0;
+	}
+	else {
+		**gl_texsort = 1;
+	}
+}
+
+cvarhook_t gl_use_shaders_hook = {
+	gl_use_shaders_callback,
+	nullptr,
+	nullptr
+};
+
+void hooked_R_Init() {
+	orig_R_Init();
+	Cvar_HookVariable("gl_use_shaders", &gl_use_shaders_hook);
 }
 
 HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
@@ -147,11 +189,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			auto dos = (IMAGE_DOS_HEADER*)base;
 			auto nt = (IMAGE_NT_HEADERS*)((u8*)dos + dos->e_lfanew);
 
-			if (nt->FileHeader.TimeDateStamp != (isHW ? 1700205173 : 1700205127)) {
+			if (nt->FileHeader.TimeDateStamp != (isHW ? 1700360264 : 1700360043)) {
 				// doesn't match the latest steam version
 				char expectedStr[64];
 				char actualStr[64];
-				time_t expectedTime = (isHW ? 1700205173 : 1700205127);
+				time_t expectedTime = (isHW ? 1700360264 : 1700360043);
 				tm expectedTm;
 				tm actualTm;
 				gmtime_s(&expectedTm, &expectedTime);
@@ -177,7 +219,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			if (StrStrIA(GetCommandLine(), "--no-music-fix") == 0) {
 				MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
 				// GetInteralCDAudio is too tiny to make a unique signature for it
-				// so instead we use the signature of the function above it
+				// so instead we use the signature of the function below it
 				GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) - 0x10);
 			}
 
@@ -186,7 +228,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 			if (isHW && StrStrIA(GetCommandLine(), "--no-overbright-fix") == 0) {
 				addr_R_BuildLightMap = FindSig(engineDLL, sigs.R_BuildLightMap);
-				MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+				//MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+				Cvar_HookVariable = (_Cvar_HookVariable)FindSig(engineDLL, sigs.Cvar_HookVariable);
+				MakeHook(engineDLL, sigs.R_Init, hooked_R_Init, (void**)&orig_R_Init);
 			}
 
 			if (isHW && StrStrIA(GetCommandLine(), "--no-sky-fix") == 0) {
@@ -196,13 +240,13 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				// we will instead patch the function call so that it calls us instead
 				// this is super brittle so make super sure that this is the right place to patch
 				u32 addr_R_NewMap = FindSig(engineDLL, sigs.R_NewMap);
-				if (addr_R_NewMap && *(u8*)(addr_R_NewMap + 0x11F) == 0xE8) {
+				if (addr_R_NewMap && *(u8*)(addr_R_NewMap + 0x11D) == 0xE8) {
 					// found the start of a call, so far so good
-					if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + 0x120), addr_R_NewMap + 0x11F + 5) == (u32)orig_Q_strncmp) {
+					if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + 0x11E), addr_R_NewMap + 0x11D + 5) == (u32)orig_Q_strncmp) {
 						// and the call goes to Q_strncmp, probably safe to patch now
 						// patches are done byte-by-byte so the address needs to be in little endian
-						u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x11F + 5);
-						MakePatch((void*)(addr_R_NewMap + 0x120), (u8*)&addr, 4);
+						u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x11D + 5);
+						MakePatch((void*)(addr_R_NewMap + 0x11E), (u8*)&addr, 4);
 					}
 				}
 			}
