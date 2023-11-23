@@ -309,6 +309,34 @@ INT_PTR CALLBACK DialogProc(HWND hWindow, UINT uMsg, WPARAM wParam, LPARAM lPara
 						MessageBox(hWindow, HLCANTWRITE, HLTITLE, MB_OK | MB_ICONERROR);
 						return TRUE;
 					}
+				} else {
+					// also make a backup if the version of the current launcher is different than the backup
+					FILE* file;
+					_wfopen_s(&file, (path + L"\\hl.exe.bak").c_str(), L"rb");
+
+					if (!file) {
+						MessageBox(hWindow, L"The installer was unable to read the backup of the Half-Life launcher.\nTry restarting the installer as an Administrator.", HLTITLE, MB_OK | MB_ICONERROR);
+						return TRUE;
+					}
+
+					fseek(file, 0, SEEK_END);
+					long backupSize = ftell(file);
+					rewind(file);
+					BYTE* backupData = (BYTE*)malloc(backupSize);
+					fread(backupData, 1, backupSize, file);
+					fclose(file);
+
+					auto newDos = (IMAGE_DOS_HEADER*)data;
+					auto newNt = (IMAGE_NT_HEADERS*)((uint8_t*)newDos + newDos->e_lfanew);
+					auto oldDos = (IMAGE_DOS_HEADER*)backupData;
+					auto oldNt = (IMAGE_NT_HEADERS*)((uint8_t*)oldDos + oldDos->e_lfanew);
+
+					if (oldNt->FileHeader.TimeDateStamp != newNt->FileHeader.TimeDateStamp) {
+						if (!CopyFile((path + L"\\hl.exe").c_str(), (path + L"\\hl.exe.bak").c_str(), FALSE)) {
+							MessageBox(hWindow, HLCANTWRITE, HLTITLE, MB_OK | MB_ICONERROR);
+							return TRUE;
+						}
+					}
 				}
 
 				// write to disk
