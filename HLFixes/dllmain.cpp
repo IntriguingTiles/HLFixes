@@ -113,8 +113,7 @@ void gl_use_shaders_callback(cvar_t* cvar) {
 	if (cvar->value >= 0.99f) {
 		// turn off texsort since gl_use_shaders does its own overbright
 		**gl_texsort = 0;
-	}
-	else {
+	} else {
 		**gl_texsort = 1;
 	}
 }
@@ -145,6 +144,11 @@ extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name,
 	return ((_CreateInterface)(addr))(name, b);
 }
 
+void ShowHookError(const char* func, const char* fix) {
+	std::string error = "Failed to find signature for " + std::string(func) + ". The " + std::string(fix) + " fix will not be applied.\n\nEither your version of Half-Life is outdated, or HLFixes needs an update.";
+	MessageBox(nullptr, error.c_str(), "HLFixes", MB_ICONERROR | MB_OK);
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 	switch (ul_reason_for_call) {
 	case DLL_PROCESS_ATTACH:
@@ -158,7 +162,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		GetModuleFileNameA(hModule, moduleName, MAX_PATH);
 		char* dll = nullptr;
 		int indexOfLastSlash = 0;
-		for (int i = 0; i < strlen(moduleName); i++) {
+		for (size_t i = 0; i < strlen(moduleName); i++) {
 			if (moduleName[i] == '\\') indexOfLastSlash = i;
 		}
 		dll = (moduleName + indexOfLastSlash + 1);
@@ -166,8 +170,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (StrStrIA(dll, "hl.fix")) {
 			engineDLL = "hw.dll";
 			isHW = true;
-		}
-		else {
+		} else {
 			// assume software engine
 			engineDLL = "sw.dll";
 			isHW = false;
@@ -182,35 +185,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		MakePatch(engineDLL, "sw.dll", "sw.fix");
 		MakePatch(engineDLL, "sw.dll", "sw.fix");
 
-		if (StrStrIA(GetCommandLine(), "--no-version-check") == 0) {
-			// check version of hw.dll
-			u32 base = (u32)GetModuleHandle(engineDLL);
-
-			auto dos = (IMAGE_DOS_HEADER*)base;
-			auto nt = (IMAGE_NT_HEADERS*)((u8*)dos + dos->e_lfanew);
-
-			if (nt->FileHeader.TimeDateStamp != (isHW ? 1700360264 : 1700360043)) {
-				// doesn't match the latest steam version
-				char expectedStr[64];
-				char actualStr[64];
-				time_t expectedTime = (isHW ? 1700360264 : 1700360043);
-				tm expectedTm;
-				tm actualTm;
-				gmtime_s(&expectedTm, &expectedTime);
-				gmtime_s(&actualTm, (time_t*)&nt->FileHeader.TimeDateStamp);
-				strftime(expectedStr, 64, "%F", &expectedTm);
-				strftime(actualStr, 64, "%F", &actualTm);
-				std::string msg = "Your version of Half-Life ("
-					+ std::string(actualStr)
-					+ ") has not been tested with HLFixes (expected version "
-					+ std::string(expectedStr)
-					+ "). There may be crashes or broken features.\n\n"
-					+ "If HLFixes works correctly, you can silence this warning by adding \"--no-version-check\" "
-					+ "to your launch options (note the two dashes at the start).";
-				MessageBox(nullptr, msg.c_str(), "HLFixes", MB_ICONWARNING | MB_OK);
-			}
-		}
-
 		if (StrStrIA(GetCommandLine(), "--no-fixes") == 0) {
 			MH_Initialize();
 
@@ -223,30 +197,52 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) - 0x10);
 			}
 
-			if (StrStrIA(GetCommandLine(), "--no-quicksave-fix") == 0)
-				MakeHook(engineDLL, sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot);
+			if (StrStrIA(GetCommandLine(), "--no-quicksave-fix") == 0) {
+				if (!MakeHook(engineDLL, sigs.SaveGameSlot, hooked_SaveGameSlot, (void**)&orig_SaveGameSlot)) {
+					ShowHookError("SaveGameSlot", "quick save history");
+				}
+			}
 
 			if (isHW && StrStrIA(GetCommandLine(), "--no-overbright-fix") == 0) {
 				addr_R_BuildLightMap = FindSig(engineDLL, sigs.R_BuildLightMap);
-				//MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
-				Cvar_HookVariable = (_Cvar_HookVariable)FindSig(engineDLL, sigs.Cvar_HookVariable);
-				MakeHook(engineDLL, sigs.R_Init, hooked_R_Init, (void**)&orig_R_Init);
+
+				if (!addr_R_BuildLightMap) {
+					ShowHookError("R_BuildLightMap", "overbright");
+				} else {
+					//MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
+					Cvar_HookVariable = (_Cvar_HookVariable)FindSig(engineDLL, sigs.Cvar_HookVariable);
+
+					if (!Cvar_HookVariable) {
+						ShowHookError("Cvar_HookVariable", "overbright");
+					} else {
+						if (!MakeHook(engineDLL, sigs.R_Init, hooked_R_Init, (void**)&orig_R_Init)) {
+							ShowHookError("R_Init", "overbright");
+						}
+					}
+				}
 			}
 
 			if (isHW && StrStrIA(GetCommandLine(), "--no-sky-fix") == 0) {
 				orig_Q_strncmp = (Q_strncmp)FindSig(engineDLL, sigs.Q_strncmp);
-
-				// in order to avoid potential side effects of hooking Q_strncmp
-				// we will instead patch the function call so that it calls us instead
-				// this is super brittle so make super sure that this is the right place to patch
-				u32 addr_R_NewMap = FindSig(engineDLL, sigs.R_NewMap);
-				if (addr_R_NewMap && *(u8*)(addr_R_NewMap + 0x11D) == 0xE8) {
-					// found the start of a call, so far so good
-					if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + 0x11E), addr_R_NewMap + 0x11D + 5) == (u32)orig_Q_strncmp) {
-						// and the call goes to Q_strncmp, probably safe to patch now
-						// patches are done byte-by-byte so the address needs to be in little endian
-						u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x11D + 5);
-						MakePatch((void*)(addr_R_NewMap + 0x11E), (u8*)&addr, 4);
+				if (!orig_Q_strncmp) {
+					ShowHookError("Q_strncmp", "Condition Zero skybox");
+				} else {
+					// in order to avoid potential side effects of hooking Q_strncmp
+					// we will instead patch the function call so that it calls us instead
+					// this is super brittle so make super sure that this is the right place to patch
+					u32 addr_R_NewMap = FindSig(engineDLL, sigs.R_NewMap);
+					if (addr_R_NewMap && *(u8*)(addr_R_NewMap + 0x11D) == 0xE8) {
+						// found the start of a call, so far so good
+						if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + 0x11E), addr_R_NewMap + 0x11D + 5) == (u32)orig_Q_strncmp) {
+							// and the call goes to Q_strncmp, probably safe to patch now
+							// patches are done byte-by-byte so the address needs to be in little endian
+							u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x11D + 5);
+							MakePatch((void*)(addr_R_NewMap + 0x11E), (u8*)&addr, 4);
+						} else {
+							ShowHookError("R_NewMap Part 2", "Condition Zero skybox");
+						}
+					} else {
+						ShowHookError("R_NewMap", "Condition Zero skybox");
 					}
 				}
 			}

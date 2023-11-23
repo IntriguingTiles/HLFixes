@@ -26,26 +26,28 @@ u32 FindSig(const char* dll, std::string_view sig) {
 	return FindSig(base, base + nt->OptionalHeader.SizeOfImage, (u8*)sig.data(), sig.length());
 }
 
-void MakeHook(void* addr, void* func) {
-	MH_CreateHook(addr, func, nullptr);
-	MH_EnableHook(addr);
+bool MakeHook(void* addr, void* func) {
+	if (MH_CreateHook(addr, func, nullptr) != MH_OK) return false;
+	return MH_EnableHook(addr) == MH_OK;
 }
 
-void MakeHook(void* addr, void* func, void** origFunc) {
-	MH_CreateHook(addr, func, origFunc);
-	MH_EnableHook(addr);
+bool MakeHook(void* addr, void* func, void** origFunc) {
+	if (MH_CreateHook(addr, func, origFunc) != MH_OK) return false;
+	return MH_EnableHook(addr) == MH_OK;
 }
 
-void MakeHook(const char* dll, std::string_view sig, void* func) {
+bool MakeHook(const char* dll, std::string_view sig, void* func) {
 	u32 addr = FindSig(dll, sig);
 
-	if (addr != 0) MakeHook((void*)addr, func);
+	if (addr != 0) return MakeHook((void*)addr, func);
+	else return false;
 }
 
-void MakeHook(const char* dll, std::string_view sig, void* func, void** origFunc) {
+bool MakeHook(const char* dll, std::string_view sig, void* func, void** origFunc) {
 	u32 addr = FindSig(dll, sig);
 
-	if (addr != 0) MakeHook((void*)addr, func, origFunc);
+	if (addr != 0) return MakeHook((void*)addr, func, origFunc);
+	else return false;
 }
 
 void MakeHook(void* vtable, u32 index, void* func) {
