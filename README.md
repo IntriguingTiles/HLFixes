@@ -2,7 +2,7 @@
 This is a hack for GoldSrc that aims to fix some bugs.
 
 ## Bugs fixed
-- gl_overbright not functioning
+- gl_overbright not functioning when gl_use_shaders is 0
 - Music stopping when a level transition occurs
 - Main menu music continuing to play while in-game
 - Quick save history not functioning
@@ -13,7 +13,6 @@ This is a hack for GoldSrc that aims to fix some bugs.
 ## Launch options
 |Option|Description|
 |-|-|
-|`--no-version-check`|Causes HLFixes to not check the engine version.|
 |`--no-fixes`|Causes HLFixes to not apply any fixes.|
 |`--no-music-fix`|Causes HLFixes to not apply music fixes.|
 |`--no-startup-music-fix`|Causes HLFixes to not apply the main menu music fix.|
