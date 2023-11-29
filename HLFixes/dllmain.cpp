@@ -9,24 +9,26 @@
 using namespace std::literals::string_view_literals;
 
 struct {
-	//std::string_view ConnectToServer = "\x56\x8B\xF1\x8B\x0D\x2A\x2A\x2A\x2A\x57\x85\xC9"sv;
 	std::string_view ConnectToServer = "\x55\x8B\xEC\x6A\xFF\x68\x2A\x2A\x2A\x2A\x64\xA1\x00\x00\x00\x00\x50\x81\xEC\x88\x00\x00\x00"sv;
-	//std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x78\x02\x00\x00"sv;
 	std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x90\x04\x00\x00"sv;
-	//std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x1C\xD9\x05\x2A\x2A\x2A\x2A\xD8\x1D\x2A\x2A\x2A\x2A\xDF\xE0"sv;
 	std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x18\x0F\x57\xC9"sv;
-	//std::string_view sub_1D08FF0 = "\xA1\x2A\x2A\x2A\x2A\x8B\x00\xC3"sv;
 	std::string_view sub_1D08FF0 = "\x56\x8B\xF1\x68\xAC\x02\x00\x00"sv;
 	std::string_view Host_Version_f = "\x68\x2A\x2A\x2A\x2A\x68\x2A\x2A\x2A\x2A\x6A\x30\x68\x2A\x2A\x2A\x2A"sv;
-	//std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
 	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x04\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x8D\x45\x0C"sv;
-	std::string_view SetEngineDLL = "\x53\x55\x56\x57\x8B\x7C\x24\x14\xBE\x00\x11\x41\x01"sv;
-	//std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
 	std::string_view Q_strncmp = "\x55\x8B\xEC\x56\x8B\x75\x08\x85\xF6\x74\x2A\x8B\x45\x0C\x85\xC0\x74\x2A"sv;
 	std::string_view R_NewMap = "\x55\x8B\xEC\x83\xEC\x08\xC7\x45\xFC\x00\x00\x00\x00"sv;
 	std::string_view Cvar_HookVariable = "\x55\x8B\xEC\x56\x8B\x75\x0C\x85\xF6\x74\x2A\x83\x3E\x00"sv;
 	std::string_view R_Init = "\x55\x8B\xEC\x81\xEC\x10\x03\x00\x00\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x6A\x10"sv;
 } sigs;
+
+struct {
+	std::string_view ConnectToServer = "\x56\x8B\xF1\x8B\x0D\x2A\x2A\x2A\x2A\x57\x85\xC9"sv;
+	std::string_view SaveGameSlot = "\x55\x8B\xEC\x81\xEC\x78\x02\x00\x00"sv;
+	std::string_view R_BuildLightMap = "\x55\x8B\xEC\x83\xEC\x1C\xD9\x05\x2A\x2A\x2A\x2A\xD8\x1D\x2A\x2A\x2A\x2A\xDF\xE0"sv;
+	std::string_view sub_1D08FF0 = "\xA1\x2A\x2A\x2A\x2A\x8B\x00\xC3"sv;
+	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
+	std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
+} oldsigs;
 
 typedef struct {
 	char* name;
@@ -53,7 +55,6 @@ typedef int(__cdecl* R_BuildLightMap)(int a1, int a2, int a3);
 typedef u32(*_GetInteralCDAudio)();
 typedef void(*Host_Version_f)();
 typedef void(*_Con_Printf)(const char* format, ...);
-typedef void(__cdecl* _SetEngineDLL)(char** dll);
 typedef int(__cdecl* Q_strncmp)(const char* s1, const char* s2, int count);
 typedef bool(__cdecl* _Cvar_HookVariable)(char* var_name, cvarhook_t* pHook); \
 typedef void(*R_Init)();
@@ -66,7 +67,6 @@ _LoadLibraryA orig_LoadLibraryA = nullptr;
 _GetInteralCDAudio GetInteralCDAudio = nullptr; // "Interal" is a typo on valve's part
 Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
-_SetEngineDLL SetEngineDLL = nullptr;
 Q_strncmp orig_Q_strncmp = nullptr;
 _Cvar_HookVariable Cvar_HookVariable = nullptr;
 R_Init orig_R_Init = nullptr;
@@ -76,6 +76,12 @@ u32 addr_R_BuildLightMap = 0;
 const char* engineDLL = nullptr;
 bool isHW = false;
 bool fixStartupMusic = true;
+bool isPreAnniversary = false;
+
+void ShowHookError(const char* func, const char* fix) {
+	std::string error = "Failed to find signature for " + std::string(func) + ". The " + std::string(fix) + " fix will not be applied.\n\nEither your version of Half-Life is outdated, or HLFixes needs an update.";
+	MessageBox(nullptr, error.c_str(), "HLFixes", MB_ICONERROR | MB_OK);
+}
 
 int __fastcall hooked_ConnectToServer(void* _this, void* edx, const char* game, int b, int c) {
 	u32 g_CDAudio = GetInteralCDAudio();
@@ -129,11 +135,19 @@ void hooked_R_Init() {
 	Cvar_HookVariable("gl_use_shaders", &gl_use_shaders_hook);
 }
 
+int __cdecl hooked_R_BuildLightMap(int a1, int a2, int a3) {
+	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x1A);
+	**gl_texsort = 1;
+	return orig_R_BuildLightMap(a1, a2, a3);
+}
+
 HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
 	auto ret = orig_LoadLibraryA(lpLibFileName);
 
 	if (StrStrIA(lpLibFileName, "GameUI.dll")) {
-		MakeHook("GameUI.dll", sigs.ConnectToServer, hooked_ConnectToServer, (void**)&orig_ConnectToServer);
+		if (!MakeHook("GameUI.dll", sigs.ConnectToServer, hooked_ConnectToServer, (void**)&orig_ConnectToServer)) {
+			ShowHookError("ConnectToServer", "music");
+		}
 	}
 
 	return ret;
@@ -142,11 +156,6 @@ HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
 extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32 * b) {
 	auto addr = GetProcAddress(GetModuleHandle(engineDLL), "CreateInterface");
 	return ((_CreateInterface)(addr))(name, b);
-}
-
-void ShowHookError(const char* func, const char* fix) {
-	std::string error = "Failed to find signature for " + std::string(func) + ". The " + std::string(fix) + " fix will not be applied.\n\nEither your version of Half-Life is outdated, or HLFixes needs an update.";
-	MessageBox(nullptr, error.c_str(), "HLFixes", MB_ICONERROR | MB_OK);
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
@@ -188,13 +197,34 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (StrStrIA(GetCommandLine(), "--no-fixes") == 0) {
 			MH_Initialize();
 
+			auto dos = (IMAGE_DOS_HEADER*)GetModuleHandle(engineDLL);
+			auto nt = (IMAGE_NT_HEADERS*)((u8*)dos + dos->e_lfanew);
+
+			isPreAnniversary = nt->FileHeader.TimeDateStamp < 1700000000;
+
+			if (isPreAnniversary) {
+				// swap out new sigs for old sigs
+				sigs.ConnectToServer = oldsigs.ConnectToServer;
+				sigs.SaveGameSlot = oldsigs.SaveGameSlot;
+				sigs.R_BuildLightMap = oldsigs.R_BuildLightMap;
+				sigs.sub_1D08FF0 = oldsigs.sub_1D08FF0;
+				sigs.Con_Printf = oldsigs.Con_Printf;
+				sigs.Q_strncmp = oldsigs.Q_strncmp;
+			}
+
 			fixStartupMusic = StrStrIA(GetCommandLine(), "--no-startup-music-fix") == 0;
 
 			if (StrStrIA(GetCommandLine(), "--no-music-fix") == 0) {
-				MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
 				// GetInteralCDAudio is too tiny to make a unique signature for it
 				// so instead we use the signature of the function below it
 				GetInteralCDAudio = (_GetInteralCDAudio)(FindSig(engineDLL, sigs.sub_1D08FF0) - 0x10);
+				if (!GetInteralCDAudio) ShowHookError("GetInteralCDAudio", "music");
+
+				// on pre-anniversary versions of the game, we use the function above it
+				if (isPreAnniversary)
+					GetInteralCDAudio = (_GetInteralCDAudio)((u32)GetInteralCDAudio + 0x20);
+
+				MakeHook(LoadLibraryA, hooked_LoadLibraryA, (void**)&orig_LoadLibraryA);
 			}
 
 			if (StrStrIA(GetCommandLine(), "--no-quicksave-fix") == 0) {
@@ -209,14 +239,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				if (!addr_R_BuildLightMap) {
 					ShowHookError("R_BuildLightMap", "overbright");
 				} else {
-					//MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap);
-					Cvar_HookVariable = (_Cvar_HookVariable)FindSig(engineDLL, sigs.Cvar_HookVariable);
-
-					if (!Cvar_HookVariable) {
-						ShowHookError("Cvar_HookVariable", "overbright");
+					if (isPreAnniversary) {
+						if (!MakeHook(engineDLL, sigs.R_BuildLightMap, hooked_R_BuildLightMap, (void**)&orig_R_BuildLightMap)) {
+							ShowHookError("R_BuildLightMap", "overbright");
+						}
 					} else {
-						if (!MakeHook(engineDLL, sigs.R_Init, hooked_R_Init, (void**)&orig_R_Init)) {
-							ShowHookError("R_Init", "overbright");
+						Cvar_HookVariable = (_Cvar_HookVariable)FindSig(engineDLL, sigs.Cvar_HookVariable);
+
+						if (!Cvar_HookVariable) {
+							ShowHookError("Cvar_HookVariable", "overbright");
+						} else {
+							if (!MakeHook(engineDLL, sigs.R_Init, hooked_R_Init, (void**)&orig_R_Init)) {
+								ShowHookError("R_Init", "overbright");
+							}
 						}
 					}
 				}
@@ -231,13 +266,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 					// we will instead patch the function call so that it calls us instead
 					// this is super brittle so make super sure that this is the right place to patch
 					u32 addr_R_NewMap = FindSig(engineDLL, sigs.R_NewMap);
-					if (addr_R_NewMap && *(u8*)(addr_R_NewMap + 0x11D) == 0xE8) {
+					u32 offset = isPreAnniversary ? 0x11F : 0x11D;
+					if (addr_R_NewMap && *(u8*)(addr_R_NewMap + offset) == 0xE8) {
 						// found the start of a call, so far so good
-						if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + 0x11E), addr_R_NewMap + 0x11D + 5) == (u32)orig_Q_strncmp) {
+						if (RelativeToAbsolute(*(u32*)(addr_R_NewMap + offset + 1), addr_R_NewMap + offset + 5) == (u32)orig_Q_strncmp) {
 							// and the call goes to Q_strncmp, probably safe to patch now
 							// patches are done byte-by-byte so the address needs to be in little endian
-							u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + 0x11D + 5);
-							MakePatch((void*)(addr_R_NewMap + 0x11E), (u8*)&addr, 4);
+							u32 addr = AbsoluteToRelative((u32)hooked_Q_strncmp, addr_R_NewMap + offset + 5);
+							MakePatch((void*)(addr_R_NewMap + offset + 1), (u8*)&addr, 4);
 						} else {
 							ShowHookError("R_NewMap Part 2", "Condition Zero skybox");
 						}
