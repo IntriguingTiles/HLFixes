@@ -42,6 +42,9 @@ typedef void *(*_dlopen)(const char *__file, int __mode);
 typedef void (*_SetEngineDLL)(const char **ppEngineDLL);
 typedef bool (*_Cvar_HookVariable)(char *var_name, cvarhook_t *pHook);
 typedef void (*R_Init)();
+typedef void (*Cmd_ExecuteStringWithPrivilegeCheck)(const char *text, int bIsPrivileged, int src);
+typedef void (*_Cmd_ExecuteString)(char* text, int src);
+typedef void (*PlayStartupSequence)(void *_this);
 
 ConnectToServer orig_ConnectToServer = nullptr;
 SaveGameSlot orig_SaveGameSlot = nullptr;
@@ -54,6 +57,9 @@ Q_strncmp orig_Q_strncmp = nullptr;
 _SetEngineDLL SetEngineDLL = nullptr;
 _Cvar_HookVariable Cvar_HookVariable = nullptr;
 R_Init orig_R_Init = nullptr;
+Cmd_ExecuteStringWithPrivilegeCheck orig_Cmd_ExecuteStringWithPrivilegeCheck = nullptr;
+_Cmd_ExecuteString Cmd_ExecuteString = nullptr;
+PlayStartupSequence orig_PlayStartupSequence = nullptr;
 
 bool *gl_texsort = nullptr;
 void *engine = nullptr;
@@ -67,7 +73,9 @@ bool fixOverbright = true;
 bool fixMusic = true;
 bool fixStartupMusic = true;
 bool fixSky = true;
+bool fixStartupVideoMusic = true;
 bool isPreAnniversary = false;
+bool finishedStartupVideos = false;
 
 std::unordered_map<std::string_view, u32> engineSymbols;
 std::unordered_map<std::string_view, u32> gameuiSymbols;
@@ -75,6 +83,7 @@ std::unordered_map<std::string_view, u32> launcherSymbols;
 
 funchook_t *engineFunchook;
 funchook_t *dlopenFunchook;
+funchook_t *engineExecuteFunchook;
 
 u32 getEngineSymbol(const char *symbol)
 {
@@ -161,6 +170,27 @@ void hooked_R_Init()
     Cvar_HookVariable("gl_use_shaders", &gl_use_shaders_hook);
 }
 
+void hooked_Cmd_ExecuteStringWithPrivilegeCheck(const char *text, int bIsPrivileged, int src)
+{
+    if (!finishedStartupVideos && strcmp(text, "mp3 loop media/gamestartup.mp3") == 0)
+       return;
+    orig_Cmd_ExecuteStringWithPrivilegeCheck(text, bIsPrivileged, src);
+}
+
+void hooked_PlayStartupSequence(void *_this)
+{
+    orig_PlayStartupSequence(_this);
+
+    if (!finishedStartupVideos)
+    {
+        finishedStartupVideos = true;
+        orig_Cmd_ExecuteStringWithPrivilegeCheck("mp3 loop media/gamestartup.mp3", true, 1);
+        Cmd_ExecuteString("mp3 loop media/gamestartup.mp3", 1);
+        funchook_uninstall(engineExecuteFunchook, 0);
+        funchook_destroy(engineExecuteFunchook);
+    }
+}
+
 extern "C" void *hooked_dlopen(const char *__file, int __mode)
 {
     auto ret = orig_dlopen(__file, __mode);
@@ -242,6 +272,10 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
             orig_Q_strncmp = (Q_strncmp)getEngineSymbol("Q_strncmp");
             orig_dlopen = dlopen;
             Cvar_HookVariable = (_Cvar_HookVariable)getEngineSymbol("Cvar_HookVariable");
+            orig_Cmd_ExecuteStringWithPrivilegeCheck = (Cmd_ExecuteStringWithPrivilegeCheck)getEngineSymbol("Cmd_ExecuteStringWithPrivilegeCheck.part.3");
+            Cmd_ExecuteString = (_Cmd_ExecuteString)getEngineSymbol("Cmd_ExecuteString");
+            orig_PlayStartupSequence = (PlayStartupSequence)getEngineSymbol("_ZN17CVideoMode_Common19PlayStartupSequenceEv");
+
             if (isHW)
                 isPreAnniversary = !hasEngineSymbol("R_UsingShaders");
 
@@ -263,7 +297,7 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
                 }
                 else
                 {
-                funchook_prepare(engineFunchook, (void **)&orig_R_Init, (void *)hooked_R_Init);
+                    funchook_prepare(engineFunchook, (void **)&orig_R_Init, (void *)hooked_R_Init);
                 }
             }
 
@@ -279,6 +313,15 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
                         MakePatch(addr_R_NewMap + offset + 1, (u8 *)&addr, 4);
                     }
                 }
+            }
+
+            if (!isPreAnniversary && fixStartupVideoMusic)
+            {
+                engineExecuteFunchook = funchook_create();
+                funchook_prepare(engineExecuteFunchook, (void **)&orig_Cmd_ExecuteStringWithPrivilegeCheck, (void *)hooked_Cmd_ExecuteStringWithPrivilegeCheck);
+                funchook_install(engineExecuteFunchook, 0);
+
+                funchook_prepare(engineFunchook, (void **)&orig_PlayStartupSequence, (void *)hooked_PlayStartupSequence);
             }
 
             funchook_prepare(engineFunchook, (void **)&orig_Host_Version_f, (void *)hooked_Host_Version_f);
@@ -298,6 +341,7 @@ static int init(int argc, char **argv, char **env)
     fixSaves = !checkArg("--no-quicksave-fix", argc, argv);
     fixOverbright = !checkArg("--no-overbright-fix", argc, argv);
     fixSky = !checkArg("--no-sky-fix", argc, argv);
+    fixStartupVideoMusic = !checkArg("--no-startup-video-music-fix", argc, argv);
 
     return 0;
 }
