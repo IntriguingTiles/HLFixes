@@ -114,7 +114,9 @@ void hooked_Host_Version_f() {
 }
 
 void gl_use_shaders_callback(cvar_t* cvar) {
-	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x36);
+	// silently fail if this isn't a CMP instruction
+	if (*(u8*)(addr_R_BuildLightMap + 0x45) != 0x83) return;
+	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x47);
 
 	if (cvar->value >= 0.99f) {
 		// turn off texsort since gl_use_shaders does its own overbright
