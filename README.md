@@ -19,6 +19,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 |`--no-quicksave-fix`|Causes HLFixes to not apply the quick save history fix.|
 |`--no-overbright-fix`|Causes HLFixes to not apply the overbright fix.|
 |`--no-sky-fix`|Causes HLFixes to not apply the CZDS sky fix.|
+|`--no-startup-video-music-fix`|Causes HLFixes to not apply the music playing during startup video fix.|
 
 ## How do I know if it's working?
 Run `version` in console. If HLFixes is installed correctly, it should say `Patched with HLFixes` at the end of the output.
