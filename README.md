@@ -24,5 +24,13 @@ This is a hack for GoldSrc that aims to fix some bugs.
 ## How do I know if it's working?
 Run `version` in console. If HLFixes is installed correctly, it should say `Patched with HLFixes` at the end of the output.
 
-## How does it work?
-The installer patches the Half-Life launcher to load HLFixes instead of the engine. HLFixes then loads the engine and applies the fixes.
+## Can I use this in my mod?
+Absolutely! The HLFixes installer produces three binaries that you'll want to ship with your mod:
+
+1. `hl.exe` - the patched version of the launcher that will load HLFixes
+2. `hl.fix` - the hardware renderer variant of HLFixes
+3. `sw.fix` - the software renderer variant of HLFixes
+
+HLFixes is licensed under the MIT license, so you will also need to include the full text of the [license](https://github.com/IntriguingTiles/HLFixes/blob/master/LICENSE) somewhere in your mod's files. This is not optional. I suggest putting the license in a file called `LICENSE_HLFixes.txt` but you can name it whatever you want.
+
+Note that this section is only relevant if you're making a standalone mod (i.e. a mod on Steam).
