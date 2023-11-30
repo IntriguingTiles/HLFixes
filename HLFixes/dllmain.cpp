@@ -19,6 +19,8 @@ struct {
 	std::string_view R_NewMap = "\x55\x8B\xEC\x83\xEC\x08\xC7\x45\xFC\x00\x00\x00\x00"sv;
 	std::string_view Cvar_HookVariable = "\x55\x8B\xEC\x56\x8B\x75\x0C\x85\xF6\x74\x2A\x83\x3E\x00"sv;
 	std::string_view R_Init = "\x55\x8B\xEC\x81\xEC\x10\x03\x00\x00\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x6A\x10"sv;
+	std::string_view Cmd_ExecuteStringWithPrivilegeCheck = "\x55\x8B\xEC\x83\xEC\x24\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x8B\x4D\x08"sv;
+	std::string_view PlayStartupSequence = "\x56\x68\x2A\x2A\x2A\x2A\x8B\xF1\xE8\x2A\x2A\x2A\x2A\x83\xC4\x04\x85\xC0\x75\x2A"sv;
 } sigs;
 
 struct {
@@ -58,6 +60,8 @@ typedef void(*_Con_Printf)(const char* format, ...);
 typedef int(__cdecl* Q_strncmp)(const char* s1, const char* s2, int count);
 typedef bool(__cdecl* _Cvar_HookVariable)(char* var_name, cvarhook_t* pHook); \
 typedef void(*R_Init)();
+typedef void(__cdecl* Cmd_ExecuteStringWithPrivilegeCheck)(const char* text, int bIsPrivileged, int src);
+typedef void(__fastcall* PlayStartupSequence)(void* _this, void* edx);
 typedef HMODULE(WINAPI* _LoadLibraryA)(LPCSTR lpLibFileName);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -70,13 +74,17 @@ _Con_Printf Con_Printf = nullptr;
 Q_strncmp orig_Q_strncmp = nullptr;
 _Cvar_HookVariable Cvar_HookVariable = nullptr;
 R_Init orig_R_Init = nullptr;
+Cmd_ExecuteStringWithPrivilegeCheck orig_Cmd_ExecuteStringWithPrivilegeCheck = nullptr;
+PlayStartupSequence orig_PlayStartupSequence = nullptr;
 
 u32 addr_R_BuildLightMap = 0;
+u32 addr_Cmd_ExecuteStringWithPrivilegeCheck = 0;
 
 const char* engineDLL = nullptr;
 bool isHW = false;
 bool fixStartupMusic = true;
 bool isPreAnniversary = false;
+bool finishedStartupVideos = false;
 
 void ShowHookError(const char* func, const char* fix) {
 	std::string error = "Failed to find signature for " + std::string(func) + ". The " + std::string(fix) + " fix will not be applied.\n\nEither your version of Half-Life is outdated, or HLFixes needs an update.";
@@ -141,6 +149,21 @@ int __cdecl hooked_R_BuildLightMap(int a1, int a2, int a3) {
 	u8** gl_texsort = (u8**)(addr_R_BuildLightMap + 0x1A);
 	**gl_texsort = 1;
 	return orig_R_BuildLightMap(a1, a2, a3);
+}
+
+void __cdecl hooked_Cmd_ExecuteStringWithPrivilegeCheck(const char* text, int bIsPrivileged, int src) {
+	if (!finishedStartupVideos && strcmp(text, "mp3 loop media/gamestartup.mp3") == 0) return;
+	orig_Cmd_ExecuteStringWithPrivilegeCheck(text, bIsPrivileged, src);
+}
+
+void __fastcall hooked_PlayStartupSequence(void* _this, void* edx) {
+	orig_PlayStartupSequence(_this, edx);
+
+	if (!finishedStartupVideos) {
+		finishedStartupVideos = true;
+		orig_Cmd_ExecuteStringWithPrivilegeCheck("mp3 loop media/gamestartup.mp3", true, 1);
+		MH_RemoveHook((void*)addr_Cmd_ExecuteStringWithPrivilegeCheck);
+	}
 }
 
 HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
@@ -282,6 +305,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 					} else {
 						ShowHookError("R_NewMap", "Condition Zero skybox");
 					}
+				}
+			}
+
+			if (!isPreAnniversary && StrStrIA(GetCommandLine(), "--no-startup-video-music-fix") == 0) {
+				addr_Cmd_ExecuteStringWithPrivilegeCheck = FindSig(engineDLL, sigs.Cmd_ExecuteStringWithPrivilegeCheck);
+				if (!MakeHook(engineDLL, sigs.Cmd_ExecuteStringWithPrivilegeCheck, hooked_Cmd_ExecuteStringWithPrivilegeCheck, (void**)&orig_Cmd_ExecuteStringWithPrivilegeCheck)) {
+					ShowHookError("Cmd_ExecuteStringWithPrivilegeCheck", "Music during startup videos");
+				} else if (!MakeHook(engineDLL, sigs.PlayStartupSequence, hooked_PlayStartupSequence, (void**)&orig_PlayStartupSequence)) {
+					ShowHookError("PlayStartupSequence", "Music during startup videos");
 				}
 			}
 
