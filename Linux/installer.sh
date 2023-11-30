@@ -16,7 +16,7 @@ install() {
     cp HLFixes.so "$1/sw.fx"
 
     # only make a backup if the current launcher is seemingly okay
-    if ! [[ -f "$1/hl_linux.bak" ]] && grep -Fxq 'hw.so' "$path/hl_linux"; then
+    if grep -Fxq 'hw.so' "$path/hl_linux"; then
         echo Making a backup of the launcher...
         cp "$1/hl_linux" "$1/hl_linux.bak"
     fi
