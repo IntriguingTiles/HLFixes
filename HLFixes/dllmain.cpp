@@ -311,9 +311,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			if (!isPreAnniversary && StrStrIA(GetCommandLine(), "--no-startup-video-music-fix") == 0) {
 				addr_Cmd_ExecuteStringWithPrivilegeCheck = FindSig(engineDLL, sigs.Cmd_ExecuteStringWithPrivilegeCheck);
 				if (!MakeHook(engineDLL, sigs.Cmd_ExecuteStringWithPrivilegeCheck, hooked_Cmd_ExecuteStringWithPrivilegeCheck, (void**)&orig_Cmd_ExecuteStringWithPrivilegeCheck)) {
-					ShowHookError("Cmd_ExecuteStringWithPrivilegeCheck", "Music during startup videos");
+					ShowHookError("Cmd_ExecuteStringWithPrivilegeCheck", "music during startup videos");
 				} else if (!MakeHook(engineDLL, sigs.PlayStartupSequence, hooked_PlayStartupSequence, (void**)&orig_PlayStartupSequence)) {
-					ShowHookError("PlayStartupSequence", "Music during startup videos");
+					ShowHookError("PlayStartupSequence", "music during startup videos");
 				}
 			}
 
