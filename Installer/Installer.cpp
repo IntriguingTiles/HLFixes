@@ -189,7 +189,7 @@ BOOL UpdateWindowFromPath(HWND hWindow, std::wstring path, BOOL firstUpdate) {
 		// no hl.exe, disable buttons and set status text
 		EnableWindow(GetDlgItem(hWindow, IDUNINSTALL), FALSE);
 		EnableWindow(GetDlgItem(hWindow, IDINSTALL), FALSE);
-		SetStatusText(hWindow, L"The Half-Life launcher is not in the specified path.");
+		SetStatusText(hWindow, L"The Half-Life launcher (hl.exe) is not in the specified path.");
 		return FALSE;
 	}
 
