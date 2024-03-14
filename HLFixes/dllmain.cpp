@@ -21,6 +21,7 @@ struct {
 	std::string_view R_Init = "\x55\x8B\xEC\x81\xEC\x10\x03\x00\x00\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x6A\x10"sv;
 	std::string_view Cmd_ExecuteStringWithPrivilegeCheck = "\x55\x8B\xEC\x83\xEC\x24\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x8B\x4D\x08"sv;
 	std::string_view PlayStartupSequence = "\x56\x68\x2A\x2A\x2A\x2A\x8B\xF1\xE8\x2A\x2A\x2A\x2A\x83\xC4\x04\x85\xC0\x75\x2A"sv;
+	std::string_view Host_GetMaxClients = "\x83\x3D\x2A\x2A\x2A\x2A\x00\xA1\x2A\x2A\x2A\x2A\x0F\x44\x05\x2A\x2A\x2A\x2A"sv;
 } sigs;
 
 struct {
@@ -30,6 +31,7 @@ struct {
 	std::string_view sub_1D08FF0 = "\xA1\x2A\x2A\x2A\x2A\x8B\x00\xC3"sv;
 	std::string_view Con_Printf = "\x55\x8B\xEC\xB8\x00\x10\x00\x00\xE8\x2A\x2A\x2A\x2A\x8B\x4D\x08"sv;
 	std::string_view Q_strncmp = "\x55\x8B\xEC\x8B\x55\x08\x53\x85\xD2\x56"sv;
+	std::string_view Host_GetMaxClients = "\xA1\x2A\x2A\x2A\x2A\x85\xC0\xA1\x2A\x2A\x2A\x2A"sv;
 } oldsigs;
 
 typedef struct {
@@ -62,6 +64,7 @@ typedef bool(__cdecl* _Cvar_HookVariable)(char* var_name, cvarhook_t* pHook); \
 typedef void(*R_Init)();
 typedef void(__cdecl* Cmd_ExecuteStringWithPrivilegeCheck)(const char* text, int bIsPrivileged, int src);
 typedef void(__fastcall* PlayStartupSequence)(void* _this, void* edx);
+typedef int(*_Host_GetMaxClients)();
 typedef HMODULE(WINAPI* _LoadLibraryA)(LPCSTR lpLibFileName);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -73,9 +76,10 @@ Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
 Q_strncmp orig_Q_strncmp = nullptr;
 _Cvar_HookVariable Cvar_HookVariable = nullptr;
-R_Init orig_R_Init = nullptr;
+R_Init orig_R_Init = nullptr; 
 Cmd_ExecuteStringWithPrivilegeCheck orig_Cmd_ExecuteStringWithPrivilegeCheck = nullptr;
 PlayStartupSequence orig_PlayStartupSequence = nullptr;
+_Host_GetMaxClients Host_GetMaxClients = nullptr;
 
 u32 addr_R_BuildLightMap = 0;
 u32 addr_Cmd_ExecuteStringWithPrivilegeCheck = 0;
@@ -85,6 +89,7 @@ bool isHW = false;
 bool fixStartupMusic = true;
 bool isPreAnniversary = false;
 bool finishedStartupVideos = false;
+bool persistMusicInMP = false;
 
 void ShowHookError(const char* func, const char* fix) {
 	std::string error = "Failed to find signature for " + std::string(func) + ". The " + std::string(fix) + " fix will not be applied.\n\nEither your version of Half-Life is outdated, or HLFixes needs an update.";
@@ -101,6 +106,12 @@ int __fastcall hooked_ConnectToServer(void* _this, void* edx, const char* game, 
 			return orig_ConnectToServer(_this, edx, "hlfixes", b, c);
 		}
 	}
+
+	if (!persistMusicInMP && Host_GetMaxClients && Host_GetMaxClients() > 1) {
+		// use unfixed music behavior for multiplayer games
+		return orig_ConnectToServer(_this, edx, game, b, c);
+	}
+
 	return orig_ConnectToServer(_this, edx, "valve", b, c);
 }
 
@@ -235,6 +246,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				sigs.sub_1D08FF0 = oldsigs.sub_1D08FF0;
 				sigs.Con_Printf = oldsigs.Con_Printf;
 				sigs.Q_strncmp = oldsigs.Q_strncmp;
+				sigs.Host_GetMaxClients = oldsigs.Host_GetMaxClients;
 			}
 
 			fixStartupMusic = StrStrIA(GetCommandLine(), "--no-startup-music-fix") == 0;
@@ -315,6 +327,13 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				} else if (!MakeHook(engineDLL, sigs.PlayStartupSequence, hooked_PlayStartupSequence, (void**)&orig_PlayStartupSequence)) {
 					ShowHookError("PlayStartupSequence", "music during startup videos");
 				}
+			}
+
+			persistMusicInMP = StrStrIA(GetCommandLine(), "--persist-music-in-mp") != 0;
+
+			if (!persistMusicInMP) {
+				Host_GetMaxClients = (_Host_GetMaxClients)FindSig(engineDLL, sigs.Host_GetMaxClients);
+				if (!Host_GetMaxClients) ShowHookError("Host_GetMaxClients", "music persisting in multiplayer");
 			}
 
 			MakeHook(engineDLL, sigs.Host_Version_f, hooked_Host_Version_f, (void**)&orig_Host_Version_f);
