@@ -45,6 +45,7 @@ typedef void (*R_Init)();
 typedef void (*Cmd_ExecuteStringWithPrivilegeCheck)(const char *text, int bIsPrivileged, int src);
 typedef void (*_Cmd_ExecuteString)(char* text, int src);
 typedef void (*PlayStartupSequence)(void *_this);
+typedef int (*_Host_GetMaxClients)();
 
 ConnectToServer orig_ConnectToServer = nullptr;
 SaveGameSlot orig_SaveGameSlot = nullptr;
@@ -60,6 +61,7 @@ R_Init orig_R_Init = nullptr;
 Cmd_ExecuteStringWithPrivilegeCheck orig_Cmd_ExecuteStringWithPrivilegeCheck = nullptr;
 _Cmd_ExecuteString Cmd_ExecuteString = nullptr;
 PlayStartupSequence orig_PlayStartupSequence = nullptr;
+_Host_GetMaxClients Host_GetMaxClients = nullptr;
 
 bool *gl_texsort = nullptr;
 void *engine = nullptr;
@@ -76,6 +78,7 @@ bool fixSky = true;
 bool fixStartupVideoMusic = true;
 bool isPreAnniversary = false;
 bool finishedStartupVideos = false;
+bool persistMusicInMP = false;
 
 std::unordered_map<std::string_view, u32> engineSymbols;
 std::unordered_map<std::string_view, u32> gameuiSymbols;
@@ -119,6 +122,12 @@ int hooked_ConnectToServer(void *_this, const char *game, int b, int c)
             return orig_ConnectToServer(_this, "hlfixes", b, c);
         }
     }
+
+    if (!persistMusicInMP && Host_GetMaxClients && Host_GetMaxClients() > 1) {
+        // use unfixed music behavior for multiplayer games
+		return orig_ConnectToServer(_this, game, b, c);
+    }
+
     return orig_ConnectToServer(_this, "valve", b, c);
 }
 
@@ -275,6 +284,7 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
             orig_Cmd_ExecuteStringWithPrivilegeCheck = (Cmd_ExecuteStringWithPrivilegeCheck)getEngineSymbol("Cmd_ExecuteStringWithPrivilegeCheck.part.3");
             Cmd_ExecuteString = (_Cmd_ExecuteString)getEngineSymbol("Cmd_ExecuteString");
             orig_PlayStartupSequence = (PlayStartupSequence)getEngineSymbol("_ZN17CVideoMode_Common19PlayStartupSequenceEv");
+            Host_GetMaxClients = (_Host_GetMaxClients)getEngineSymbol("Host_GetMaxClients");
 
             if (isHW)
                 isPreAnniversary = !hasEngineSymbol("R_UsingShaders");
@@ -342,6 +352,7 @@ static int init(int argc, char **argv, char **env)
     fixOverbright = !checkArg("--no-overbright-fix", argc, argv);
     fixSky = !checkArg("--no-sky-fix", argc, argv);
     fixStartupVideoMusic = !checkArg("--no-startup-video-music-fix", argc, argv);
+    persistMusicInMP = checkArg("--persist-music-in-mp", argc, argv);
 
     return 0;
 }
