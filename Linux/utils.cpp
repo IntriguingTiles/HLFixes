@@ -8,10 +8,11 @@
 
 #include <unordered_map>
 #include <string_view>
+#include <string>
 
 #include "types.h"
 
-void readSymbols(const char *lib, std::unordered_map<std::string_view, u32> &symbols)
+void readSymbols(const char *lib, std::unordered_map<std::string, u32> &symbols)
 {
     elf_version(EV_CURRENT);
     int fd = open(lib, O_RDONLY);

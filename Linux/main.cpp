@@ -5,6 +5,7 @@
 
 #include <unordered_map>
 #include <string_view>
+#include <string>
 
 #include "types.h"
 #include "funchook.h"
@@ -80,9 +81,9 @@ bool isPreAnniversary = false;
 bool finishedStartupVideos = false;
 bool persistMusicInMP = false;
 
-std::unordered_map<std::string_view, u32> engineSymbols;
-std::unordered_map<std::string_view, u32> gameuiSymbols;
-std::unordered_map<std::string_view, u32> launcherSymbols;
+std::unordered_map<std::string, u32> engineSymbols;
+std::unordered_map<std::string, u32> gameuiSymbols;
+std::unordered_map<std::string, u32> launcherSymbols;
 
 funchook_t *engineFunchook;
 funchook_t *dlopenFunchook;
@@ -90,6 +91,7 @@ funchook_t *engineExecuteFunchook;
 
 u32 getEngineSymbol(const char *symbol)
 {
+    printf("requesting engine symbol %s\n", symbol);
     return engineSymbols[symbol] + engineAddr;
 }
 

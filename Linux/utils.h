@@ -5,7 +5,7 @@
 
 #include "types.h"
 
-void readSymbols(const char *lib, std::unordered_map<std::string_view, u32> &symbols);
+void readSymbols(const char *lib, std::unordered_map<std::string, u32> &symbols);
 bool getModuleAddress(const char *lib, u32* startOfModule = nullptr, u32* endOfModule = nullptr);
 bool checkArg(const char *arg, int argc, char **argv);
 u32 RelativeToAbsolute(u32 relAddr, u32 nextInstructionAddr);
