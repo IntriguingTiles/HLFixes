@@ -178,9 +178,10 @@ void __fastcall hooked_PlayStartupSequence(void* _this, void* edx) {
 }
 
 HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
+	auto existingModule = GetModuleHandleA(lpLibFileName);
 	auto ret = orig_LoadLibraryA(lpLibFileName);
 
-	if (StrStrIA(lpLibFileName, "GameUI.dll")) {
+	if (existingModule != ret && ret != nullptr && StrStrIA(lpLibFileName, "GameUI.dll")) {
 		if (!MakeHook("GameUI.dll", sigs.ConnectToServer, hooked_ConnectToServer, (void**)&orig_ConnectToServer)) {
 			ShowHookError("ConnectToServer", "music");
 		}
