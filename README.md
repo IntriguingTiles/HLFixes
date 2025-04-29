@@ -5,7 +5,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 - gl_overbright not functioning when gl_use_shaders is 0
 - Music stopping when a level transition occurs
 - Main menu music continuing to play while in-game
-- Quick save history not functioning
+- Quick save backup not functioning
 - Broken skies in Condition Zero Deleted Scenes when texture sorting is on
 
 ## [Installation Guide](https://hgrunt.xyz/hlfixes.html#install-guide)
@@ -16,7 +16,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 |`--no-fixes`|Causes HLFixes to not apply any fixes.|
 |`--no-music-fix`|Causes HLFixes to not apply music fixes.|
 |`--no-startup-music-fix`|Causes HLFixes to not apply the main menu music fix.|
-|`--no-quicksave-fix`|Causes HLFixes to not apply the quick save history fix.|
+|`--no-quicksave-fix`|Causes HLFixes to not apply the quick save backup fix.|
 |`--no-overbright-fix`|Causes HLFixes to not apply the overbright fix.|
 |`--no-sky-fix`|Causes HLFixes to not apply the CZDS sky fix.|
 |`--no-startup-video-music-fix`|Causes HLFixes to not apply the music playing during startup video fix.|
