@@ -337,6 +337,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				if (!Host_GetMaxClients) ShowHookError("Host_GetMaxClients", "music persisting in multiplayer");
 			}
 
+			if (StrStrIA(GetCommandLine(), "--no-multitexture") != 0) {
+				MakePatch(engineDLL, "GL_ARB_multitexture", "FIX_YOUR_DRIVER_AMD");
+				MakePatch(engineDLL, "GL_SGIS_multitexture", "FIX_YOUR_DRIVER_AMD");
+			}
+
 			MakeHook(engineDLL, sigs.Host_Version_f, hooked_Host_Version_f, (void**)&orig_Host_Version_f);
 			Con_Printf = (_Con_Printf)FindSig(engineDLL, sigs.Con_Printf);
 		}
