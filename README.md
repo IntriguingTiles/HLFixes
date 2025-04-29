@@ -21,6 +21,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 |`--no-sky-fix`|Causes HLFixes to not apply the CZDS sky fix.|
 |`--no-startup-video-music-fix`|Causes HLFixes to not apply the music playing during startup video fix.|
 |`--persist-music-in-mp`|Allows music to continue playing between multiplayer level changes.|
+|`--no-multitexture`|(Windows only) Prevents use of the OpenGL multitexture extension. May improve performance when using a poorly written graphics driver. Incompatible with `gl_use_shaders 1`.|
 
 ## How do I know if it's working?
 Run `version` in console. If HLFixes is installed correctly, it should say `Patched with HLFixes` at the end of the output.
