@@ -47,6 +47,7 @@ typedef void (*Cmd_ExecuteStringWithPrivilegeCheck)(const char *text, int bIsPri
 typedef void (*_Cmd_ExecuteString)(char* text, int src);
 typedef void (*PlayStartupSequence)(void *_this);
 typedef int (*_Host_GetMaxClients)();
+typedef void *(*SDL_CreateWindow)(const char *title, int x, int y, int w, int h, u32 flags);
 
 ConnectToServer orig_ConnectToServer = nullptr;
 SaveGameSlot orig_SaveGameSlot = nullptr;
@@ -63,6 +64,7 @@ Cmd_ExecuteStringWithPrivilegeCheck orig_Cmd_ExecuteStringWithPrivilegeCheck = n
 _Cmd_ExecuteString Cmd_ExecuteString = nullptr;
 PlayStartupSequence orig_PlayStartupSequence = nullptr;
 _Host_GetMaxClients Host_GetMaxClients = nullptr;
+SDL_CreateWindow orig_SDL_CreateWindow = nullptr;
 
 bool *gl_texsort = nullptr;
 void *engine = nullptr;
@@ -77,6 +79,7 @@ bool fixMusic = true;
 bool fixStartupMusic = true;
 bool fixSky = true;
 bool fixStartupVideoMusic = true;
+bool fixWrongMonitor = true;
 bool isPreAnniversary = false;
 bool finishedStartupVideos = false;
 bool persistMusicInMP = false;
@@ -202,6 +205,11 @@ void hooked_PlayStartupSequence(void *_this)
     }
 }
 
+void* hooked_SDL_CreateWindow(const char *title, int x, int y, int w, int h, u32 flags)
+{
+    return orig_SDL_CreateWindow(title, 0x1FFF0000u, 0x1FFF0000u, w, h, flags);
+}
+
 extern "C" void *hooked_dlopen(const char *__file, int __mode)
 {
     auto ret = orig_dlopen(__file, __mode);
@@ -287,6 +295,7 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
             Cmd_ExecuteString = (_Cmd_ExecuteString)getEngineSymbol("Cmd_ExecuteString");
             orig_PlayStartupSequence = (PlayStartupSequence)getEngineSymbol("_ZN17CVideoMode_Common19PlayStartupSequenceEv");
             Host_GetMaxClients = (_Host_GetMaxClients)getEngineSymbol("Host_GetMaxClients");
+            orig_SDL_CreateWindow = (SDL_CreateWindow)dlsym(engine, "SDL_CreateWindow");
 
             if (isHW)
                 isPreAnniversary = !hasEngineSymbol("R_UsingShaders");
@@ -336,6 +345,11 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
                 funchook_prepare(engineFunchook, (void **)&orig_PlayStartupSequence, (void *)hooked_PlayStartupSequence);
             }
 
+            if (fixWrongMonitor)
+            {
+                funchook_prepare(engineFunchook, (void **)&orig_SDL_CreateWindow, (void *)hooked_SDL_CreateWindow);
+            }
+
             funchook_prepare(engineFunchook, (void **)&orig_Host_Version_f, (void *)hooked_Host_Version_f);
             funchook_install(engineFunchook, 0);
         }
@@ -354,6 +368,7 @@ static int init(int argc, char **argv, char **env)
     fixOverbright = !checkArg("--no-overbright-fix", argc, argv);
     fixSky = !checkArg("--no-sky-fix", argc, argv);
     fixStartupVideoMusic = !checkArg("--no-startup-video-music-fix", argc, argv);
+    fixWrongMonitor = !checkArg("--no-wrong-monitor-fix", argc, argv);
     persistMusicInMP = checkArg("--persist-music-in-mp", argc, argv);
 
     return 0;
