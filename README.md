@@ -7,6 +7,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 - Main menu music continuing to play while in-game
 - Quick save backup not functioning
 - Broken skies in Condition Zero Deleted Scenes when texture sorting is on
+- Texture warping on distant models.
 - Linux: Game window opening on wrong monitor
 
 ## [Installation Guide](https://hgrunt.xyz/hlfixes.html#install-guide)
@@ -21,6 +22,7 @@ This is a hack for GoldSrc that aims to fix some bugs.
 |`--no-overbright-fix`|Causes HLFixes to not apply the overbright fix.|
 |`--no-sky-fix`|Causes HLFixes to not apply the CZDS sky fix.|
 |`--no-startup-video-music-fix`|Causes HLFixes to not apply the music playing during startup video fix.|
+|`--no-model-mipmap-fix`|Causes HLFixes to not disable mipmapping on most models.|
 |`--no-wrong-monitor-fix`|(Linux only) Causes HLFixes to not apply the wrong monitor fix.|
 |`--persist-music-in-mp`|Allows music to continue playing between multiplayer level changes.|
 |`--no-multitexture`|(Windows only) Prevents use of the OpenGL multitexture extension. May improve performance when using a poorly written graphics driver. Incompatible with `gl_use_shaders 1`.|
