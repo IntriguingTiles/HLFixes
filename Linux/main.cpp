@@ -48,6 +48,8 @@ typedef void (*_Cmd_ExecuteString)(char* text, int src);
 typedef void (*PlayStartupSequence)(void *_this);
 typedef int (*_Host_GetMaxClients)();
 typedef void *(*SDL_CreateWindow)(const char *title, int x, int y, int w, int h, u32 flags);
+typedef void (*Mod_LoadStudioModel)(void* mod, void *buffer);
+typedef int (*GL_LoadTexture)(char *identifier, int textureType, int width, int height, u8* data, int mipmap, int iType, u8 *pPal);
 
 ConnectToServer orig_ConnectToServer = nullptr;
 SaveGameSlot orig_SaveGameSlot = nullptr;
@@ -65,6 +67,8 @@ _Cmd_ExecuteString Cmd_ExecuteString = nullptr;
 PlayStartupSequence orig_PlayStartupSequence = nullptr;
 _Host_GetMaxClients Host_GetMaxClients = nullptr;
 SDL_CreateWindow orig_SDL_CreateWindow = nullptr;
+Mod_LoadStudioModel orig_Mod_LoadStudioModel = nullptr;
+GL_LoadTexture orig_GL_LoadTexture = nullptr;
 
 bool *gl_texsort = nullptr;
 void *engine = nullptr;
@@ -80,9 +84,12 @@ bool fixStartupMusic = true;
 bool fixSky = true;
 bool fixStartupVideoMusic = true;
 bool fixWrongMonitor = true;
+bool fixModelMipmaps = true;
 bool isPreAnniversary = false;
 bool finishedStartupVideos = false;
 bool persistMusicInMP = false;
+
+bool shouldInvertMipmap = false;
 
 std::unordered_map<std::string, u32> engineSymbols;
 std::unordered_map<std::string, u32> gameuiSymbols;
@@ -210,6 +217,18 @@ void* hooked_SDL_CreateWindow(const char *title, int x, int y, int w, int h, u32
     return orig_SDL_CreateWindow(title, 0x1FFF0000u, 0x1FFF0000u, w, h, flags);
 }
 
+void hooked_Mod_LoadStudioModel(void *mod, void *buffer)
+{
+    shouldInvertMipmap = true;
+    orig_Mod_LoadStudioModel(mod, buffer);
+    shouldInvertMipmap = false;
+}
+
+int hooked_GL_LoadTexture(char *identifier, int textureType, int width, int height, u8* data, int mipmap, int iType, u8 *pPal)
+{
+    return orig_GL_LoadTexture(identifier, textureType, width, height, data, shouldInvertMipmap ? !mipmap : mipmap, iType, pPal);
+}
+
 extern "C" void *hooked_dlopen(const char *__file, int __mode)
 {
     auto ret = orig_dlopen(__file, __mode);
@@ -296,6 +315,8 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
             orig_PlayStartupSequence = (PlayStartupSequence)getEngineSymbol("_ZN17CVideoMode_Common19PlayStartupSequenceEv");
             Host_GetMaxClients = (_Host_GetMaxClients)getEngineSymbol("Host_GetMaxClients");
             orig_SDL_CreateWindow = (SDL_CreateWindow)dlsym(engine, "SDL_CreateWindow");
+            orig_Mod_LoadStudioModel = (Mod_LoadStudioModel)getEngineSymbol("Mod_LoadStudioModel");
+            orig_GL_LoadTexture = (GL_LoadTexture)getEngineSymbol("GL_LoadTexture");
 
             if (isHW)
                 isPreAnniversary = !hasEngineSymbol("R_UsingShaders");
@@ -350,6 +371,12 @@ extern "C" void *CreateInterface(const char *name, u32 *b)
                 funchook_prepare(engineFunchook, (void **)&orig_SDL_CreateWindow, (void *)hooked_SDL_CreateWindow);
             }
 
+            if (fixModelMipmaps)
+            {
+                funchook_prepare(engineFunchook, (void **)&orig_Mod_LoadStudioModel, (void *)hooked_Mod_LoadStudioModel);
+                funchook_prepare(engineFunchook, (void **)&orig_GL_LoadTexture, (void *)hooked_GL_LoadTexture);
+            }
+
             funchook_prepare(engineFunchook, (void **)&orig_Host_Version_f, (void *)hooked_Host_Version_f);
             funchook_install(engineFunchook, 0);
         }
@@ -369,6 +396,7 @@ static int init(int argc, char **argv, char **env)
     fixSky = !checkArg("--no-sky-fix", argc, argv);
     fixStartupVideoMusic = !checkArg("--no-startup-video-music-fix", argc, argv);
     fixWrongMonitor = !checkArg("--no-wrong-monitor-fix", argc, argv);
+    fixModelMipmaps = !checkArg("--no-model-mipmap-fix", argc, argv);
     persistMusicInMP = checkArg("--persist-music-in-mp", argc, argv);
 
     return 0;
