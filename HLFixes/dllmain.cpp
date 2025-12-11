@@ -22,6 +22,8 @@ struct {
 	std::string_view Cmd_ExecuteStringWithPrivilegeCheck = "\x55\x8B\xEC\x83\xEC\x24\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x8B\x4D\x08"sv;
 	std::string_view PlayStartupSequence = "\x56\x68\x2A\x2A\x2A\x2A\x8B\xF1\xE8\x2A\x2A\x2A\x2A\x83\xC4\x04\x85\xC0\x75\x2A"sv;
 	std::string_view Host_GetMaxClients = "\x83\x3D\x2A\x2A\x2A\x2A\x00\xA1\x2A\x2A\x2A\x2A\x0F\x44\x05\x2A\x2A\x2A\x2A"sv;
+	std::string_view Mod_LoadStudioModel = "\x55\x8B\xEC\x81\xEC\x1C\x01\x00\x00\xA1\x2A\x2A\x2A\x2A\x33\xC5\x89\x45\xFC\x53\x8B\x5D\x08"sv;
+	std::string_view GL_LoadTexture = "\x55\x8B\xEC\xFF\x35\x2A\x2A\x2A\x2A"sv;
 } sigs;
 
 struct {
@@ -65,6 +67,8 @@ typedef void(*R_Init)();
 typedef void(__cdecl* Cmd_ExecuteStringWithPrivilegeCheck)(const char* text, int bIsPrivileged, int src);
 typedef void(__fastcall* PlayStartupSequence)(void* _this, void* edx);
 typedef int(*_Host_GetMaxClients)();
+typedef void(__cdecl* Mod_LoadStudioModel)(void* mod, void* buffer);
+typedef int(__cdecl* GL_LoadTexture)(char* identifier, int textureType, int width, int height, u8* data, int mipmap, int iType, u8* pPal);
 typedef HMODULE(WINAPI* _LoadLibraryA)(LPCSTR lpLibFileName);
 
 ConnectToServer orig_ConnectToServer = nullptr;
@@ -76,10 +80,12 @@ Host_Version_f orig_Host_Version_f = nullptr;
 _Con_Printf Con_Printf = nullptr;
 Q_strncmp orig_Q_strncmp = nullptr;
 _Cvar_HookVariable Cvar_HookVariable = nullptr;
-R_Init orig_R_Init = nullptr; 
+R_Init orig_R_Init = nullptr;
 Cmd_ExecuteStringWithPrivilegeCheck orig_Cmd_ExecuteStringWithPrivilegeCheck = nullptr;
 PlayStartupSequence orig_PlayStartupSequence = nullptr;
 _Host_GetMaxClients Host_GetMaxClients = nullptr;
+Mod_LoadStudioModel orig_ModLoadStudioModel = nullptr;
+GL_LoadTexture orig_GL_LoadTexture = nullptr;
 
 u32 addr_R_BuildLightMap = 0;
 u32 addr_Cmd_ExecuteStringWithPrivilegeCheck = 0;
@@ -90,6 +96,8 @@ bool fixStartupMusic = true;
 bool isPreAnniversary = false;
 bool finishedStartupVideos = false;
 bool persistMusicInMP = false;
+
+bool shouldInvertMipmap = false;
 
 void ShowHookError(const char* func, const char* fix) {
 	std::string error = "Failed to find signature for " + std::string(func) + ". The " + std::string(fix) + " fix will not be applied.\n\nEither your version of Half-Life is outdated, or HLFixes needs an update.";
@@ -177,6 +185,16 @@ void __fastcall hooked_PlayStartupSequence(void* _this, void* edx) {
 	}
 }
 
+void __cdecl hooked_Mod_LoadStudioModel(void* mod, void* buffer) {
+	shouldInvertMipmap = true;
+	orig_ModLoadStudioModel(mod, buffer);
+	shouldInvertMipmap = false;
+}
+
+int __cdecl hooked_GL_LoadTexture(char* identifier, int textureType, int width, int height, u8* data, int mipmap, int iType, u8* pPal) {
+	return orig_GL_LoadTexture(identifier, textureType, width, height, data, shouldInvertMipmap ? !mipmap : mipmap, iType, pPal);
+}
+
 HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
 	auto existingModule = GetModuleHandleA(lpLibFileName);
 	auto ret = orig_LoadLibraryA(lpLibFileName);
@@ -190,7 +208,7 @@ HMODULE WINAPI hooked_LoadLibraryA(LPCSTR lpLibFileName) {
 	return ret;
 }
 
-extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32 * b) {
+extern "C" __declspec(dllexport) void* __cdecl CreateInterface(const char* name, u32* b) {
 	auto addr = GetProcAddress(GetModuleHandle(engineDLL), "CreateInterface");
 	return ((_CreateInterface)(addr))(name, b);
 }
@@ -327,6 +345,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 					ShowHookError("Cmd_ExecuteStringWithPrivilegeCheck", "music during startup videos");
 				} else if (!MakeHook(engineDLL, sigs.PlayStartupSequence, hooked_PlayStartupSequence, (void**)&orig_PlayStartupSequence)) {
 					ShowHookError("PlayStartupSequence", "music during startup videos");
+				}
+			}
+
+			if (!isPreAnniversary && isHW && StrStrIA(GetCommandLine(), "--no-model-mipmap-fix") == 0) {
+				if (!MakeHook(engineDLL, sigs.Mod_LoadStudioModel, hooked_Mod_LoadStudioModel, (void**)&orig_ModLoadStudioModel)) {
+					ShowHookError("Mod_LoadStudioModel", "model mipmap");
+				} else if (!MakeHook(engineDLL, sigs.GL_LoadTexture, hooked_GL_LoadTexture, (void**)&orig_GL_LoadTexture)) {
+					ShowHookError("GL_LoadTexture", "model mipmap");
 				}
 			}
 
